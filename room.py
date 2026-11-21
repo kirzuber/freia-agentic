@@ -22,12 +22,13 @@ def index():
 
 @app.get("/artifacts/{name}")
 def artifact(name: str):
-    if name not in {"conversation.md", "joint-assessment.md", "solution-direction.md", "solution-diagram.svg", "deck.md"}:
+    if name not in {"conversation.md", "joint-assessment.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html"}:
         raise HTTPException(status_code=404)
     path = OUTPUTS / name
     if not path.is_file():
         raise HTTPException(status_code=404)
-    return FileResponse(path, media_type="image/svg+xml" if name.endswith(".svg") else "text/markdown")
+    media_type = "image/svg+xml" if name.endswith(".svg") else "text/html" if name.endswith(".html") else "text/markdown"
+    return FileResponse(path, media_type=media_type)
 
 
 @app.get("/session")

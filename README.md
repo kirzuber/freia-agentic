@@ -41,3 +41,5 @@ set -a; . ./.env; set +a
 Open http://127.0.0.1:8000/ and click **Start session**. The room streams model text as it arrives, shows runtime agent states and message exchange, and displays the generated Markdown artifacts.
 
 After the joint assessment, Sol writes `outputs/solution-direction.md` and `outputs/solution-diagram.svg`; Bob then uses Sol's direction to write the six-slide `outputs/deck.md`. The room previews and downloads all four final artifacts.
+
+The same run also renders `outputs/deck.html`, a standalone HTML slide presentation with Sol's diagram embedded. The room can open or download it. Artifact activity labels come from the live execution phases.

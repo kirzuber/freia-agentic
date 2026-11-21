@@ -88,6 +88,7 @@
       <div class="artifact-row"><button class="artifact" id="view-direction" disabled>Solution direction <span>↗</span></button><a class="download" id="download-direction" href="/artifacts/solution-direction.md" download="solution-direction.md" title="Download solution direction" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-diagram" disabled>Solution diagram <span>↗</span></button><a class="download" id="download-diagram" href="/artifacts/solution-diagram.svg" download="solution-diagram.svg" title="Download solution diagram" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-deck" disabled>Discussion deck <span>↗</span></button><a class="download" id="download-deck" href="/artifacts/deck.md" download="deck.md" title="Download discussion deck" hidden>↓</a></div>
+      <div class="artifact-row"><button class="artifact" id="view-presentation" disabled>HTML presentation <span>↗</span></button><a class="download" id="download-presentation" href="/artifacts/deck.html" download="deck.html" title="Download HTML presentation" hidden>↓</a></div>
       <pre id="artifact-view">Artifacts will appear here after the session begins.</pre><img id="diagram-view" alt="Sol's solution direction diagram" hidden>
       <div class="metric" id="metrics">Ready. Four conversation turns, one assessment, three artifact calls.</div>
     </div></section>
@@ -108,22 +109,24 @@
   const directionButton = document.getElementById('view-direction');
   const diagramButton = document.getElementById('view-diagram');
   const deckButton = document.getElementById('view-deck');
+  const presentationButton = document.getElementById('view-presentation');
   const artifactControls = {
     'joint-assessment.md': [jointButton, document.getElementById('download-joint')],
     'solution-direction.md': [directionButton, document.getElementById('download-direction')],
     'solution-diagram.svg': [diagramButton, document.getElementById('download-diagram')],
-    'deck.md': [deckButton, document.getElementById('download-deck')]
+    'deck.md': [deckButton, document.getElementById('download-deck')],
+    'deck.html': [presentationButton, document.getElementById('download-presentation')]
   };
   let source;
   let finished = false;
   const messageBodies = new Map();
 
   function setStatus(text, live) { status.textContent = text; status.classList.toggle('live', live); }
-  function setAgentState(agent, state) {
+  function setAgentState(agent, state, label = state) {
     const card = document.getElementById(agent);
     card.classList.remove('thinking', 'speaking', 'waiting', 'completed');
     card.classList.add(state);
-    document.getElementById(agent + '-state').textContent = state;
+    document.getElementById(agent + '-state').textContent = label;
   }
   function animateDirection(agent) {
     exchange.classList.remove('to-bob', 'to-sol');
@@ -149,6 +152,7 @@
   directionButton.onclick = () => viewArtifact('solution-direction.md');
   diagramButton.onclick = () => viewArtifact('solution-diagram.svg');
   deckButton.onclick = () => viewArtifact('deck.md');
+  presentationButton.onclick = () => window.open('/artifacts/deck.html', '_blank', 'noopener');
   start.onclick = () => {
     finished = false;
     start.disabled = true;
@@ -169,10 +173,10 @@
     source.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.kind === 'state') {
-        setAgentState(data.agent, data.state);
+        const activity = {synthesis: 'Creating assessment', solution: 'Creating direction', diagram: 'Creating diagram', deck: 'Creating deck'}[data.phase];
+        setAgentState(data.agent, data.state, activity && data.state !== 'waiting' ? activity : data.state);
         if (data.state === 'thinking' || data.state === 'speaking') {
-          const phase = {synthesis: 'joint assessment', solution: 'solution direction', diagram: 'solution diagram', deck: 'discussion deck'}[data.phase];
-          setStatus(data.agent.toUpperCase() + ' is ' + data.state + (phase ? ' · ' + phase : ''), true);
+          setStatus(activity ? data.agent.toUpperCase() + ' · ' + activity : data.agent.toUpperCase() + ' is ' + data.state, true);
         }
       } else if (data.kind === 'delta') {
         if (data.phase !== 'conversation') {
@@ -204,7 +208,7 @@
         conversationButton.disabled = false;
       } else if (data.kind === 'artifact') {
         const controls = artifactControls[data.name];
-        if (controls) { controls[0].disabled = false; controls[1].hidden = false; viewArtifact(data.name); }
+        if (controls) { controls[0].disabled = false; controls[1].hidden = false; if (data.name !== 'deck.html') viewArtifact(data.name); }
       } else if (data.kind === 'complete') {
         finished = true;
         source.close();

@@ -13,6 +13,7 @@ import yaml
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_deepseek import ChatDeepSeek
 from langgraph.graph import END, START, StateGraph
+from presentation import render_deck_html
 
 
 ROOT = Path(__file__).resolve().parent
@@ -55,8 +56,9 @@ def main() -> None:
     direction_path = output_dir / "solution-direction.md"
     diagram_path = output_dir / "solution-diagram.svg"
     deck_path = output_dir / "deck.md"
+    presentation_path = output_dir / "deck.html"
     conversation_path.write_text("# Bob and Sol — True North DPO conversation\n\n")
-    for path in (joint_path, direction_path, diagram_path, deck_path):
+    for path in (joint_path, direction_path, diagram_path, deck_path, presentation_path):
         path.unlink(missing_ok=True)
 
     def emit(kind: str, **data) -> None:
@@ -207,6 +209,8 @@ def main() -> None:
             raise RuntimeError(f"deck failed: finish_reason={finish}, content_chars={len(content)}")
         deck_path.write_text(content + "\n")
         emit("artifact", name="deck.md")
+        presentation_path.write_text(render_deck_html(content, state["diagram_svg"]))
+        emit("artifact", name="deck.html")
         emit("state", agent="bob", state="waiting", phase="deck")
         return {"deck": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
 
@@ -256,6 +260,7 @@ def main() -> None:
     print(f"Solution direction: {direction_path}")
     print(f"Solution diagram: {diagram_path}")
     print(f"Deck: {deck_path}")
+    print(f"HTML presentation: {presentation_path}")
     emit("complete", elapsed=round(perf_counter() - start, 2), model_calls=result["model_calls"], tokens=result["tokens"])
 
 
