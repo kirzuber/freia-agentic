@@ -1,2 +1,7 @@
 langchain-deepseek
 PyYAML
+beautifulsoup4
+httpx
+langgraph
+fastapi
+uvicorn
