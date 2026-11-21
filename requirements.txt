@@ -1,2 +1,4 @@
 langchain-deepseek
 PyYAML
+beautifulsoup4
+httpx
