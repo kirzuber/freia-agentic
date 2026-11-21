@@ -29,7 +29,7 @@ With `DEEPSEEK_API_KEY` loaded, run:
 .venv/bin/python collaborate.py private/missions/true-north-dpo.md outputs/bob.md outputs/sol.md
 ```
 
-This uses four alternating Bob/Sol calls and one Bob synthesis call, with no web tools. It prints each message and writes `outputs/conversation.md` and `outputs/joint-assessment.md`.
+This uses four alternating Bob/Sol calls, one Bob synthesis call, and three artifact calls, with no web tools. It prints each message and writes `outputs/conversation.md`, `outputs/joint-assessment.md`, `outputs/solution-direction.md`, `outputs/solution-diagram.svg`, and `outputs/deck.md`.
 
 ## Visual room
 
@@ -39,3 +39,5 @@ set -a; . ./.env; set +a
 ```
 
 Open http://127.0.0.1:8000/ and click **Start session**. The room streams model text as it arrives, shows runtime agent states and message exchange, and displays the generated Markdown artifacts.
+
+After the joint assessment, Sol writes `outputs/solution-direction.md` and `outputs/solution-diagram.svg`; Bob then uses Sol's direction to write the six-slide `outputs/deck.md`. The room previews and downloads all four final artifacts.

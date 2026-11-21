@@ -59,7 +59,12 @@
     .side-body { padding: 20px; }
     .artifact { width: 100%; display: flex; justify-content: space-between; align-items: center; background: #1a2536; color: #dce8f7; padding: 13px 14px; border: 1px solid #344158; border-radius: 10px; text-align: left; margin-bottom: 11px; font-size: 12px; }
     .artifact:disabled { opacity: .45; cursor: default; }
+    .artifact-row { display: flex; gap: 8px; }
+    .artifact-row .artifact { flex: 1; }
+    .download { height: 43px; width: 38px; flex: none; display: grid; place-items: center; border: 1px solid #344158; border-radius: 10px; background: #1a2536; color: #d7f770; text-decoration: none; font-size: 17px; }
+    [hidden] { display: none !important; }
     #artifact-view { margin: 16px 0 0; max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.55 ui-monospace, monospace; color: #aebbd0; }
+    #diagram-view { width: 100%; margin-top: 16px; border: 1px solid #344158; border-radius: 10px; }
     .metric { color: #8290a8; font-size: 12px; line-height: 1.7; border-top: 1px solid #283146; margin-top: 19px; padding-top: 15px; }
     @media (max-width: 800px) { .stage { grid-template-columns: 1fr 1fr; } .exchange { grid-column: 1 / -1; grid-row: 2; } .columns { grid-template-columns: 1fr; } header { align-items: flex-start; } }
   </style>
@@ -77,7 +82,15 @@
   </div>
   <div class="columns">
     <section class="panel"><div class="panel-head"><h3>Live conversation</h3><small id="count">0 / 4 messages</small></div><div id="messages"><div class="empty">Start a session to see Bob and Sol exchange their views.</div></div></section>
-    <section class="panel"><div class="panel-head"><h3>Session artifacts</h3><small>Local Markdown</small></div><div class="side-body"><button class="artifact" id="view-conversation" disabled>Conversation transcript <span>↗</span></button><button class="artifact" id="view-joint" disabled>Joint assessment <span>↗</span></button><pre id="artifact-view">Artifacts will appear here after the session begins.</pre><div class="metric" id="metrics">Ready. Four conversation turns and one final synthesis call.</div></div></section>
+    <section class="panel"><div class="panel-head"><h3>Session artifacts</h3><small>Local files</small></div><div class="side-body">
+      <button class="artifact" id="view-conversation" disabled>Conversation transcript <span>↗</span></button>
+      <div class="artifact-row"><button class="artifact" id="view-joint" disabled>Joint assessment <span>↗</span></button><a class="download" id="download-joint" href="/artifacts/joint-assessment.md" download="joint-assessment.md" title="Download joint assessment" hidden>↓</a></div>
+      <div class="artifact-row"><button class="artifact" id="view-direction" disabled>Solution direction <span>↗</span></button><a class="download" id="download-direction" href="/artifacts/solution-direction.md" download="solution-direction.md" title="Download solution direction" hidden>↓</a></div>
+      <div class="artifact-row"><button class="artifact" id="view-diagram" disabled>Solution diagram <span>↗</span></button><a class="download" id="download-diagram" href="/artifacts/solution-diagram.svg" download="solution-diagram.svg" title="Download solution diagram" hidden>↓</a></div>
+      <div class="artifact-row"><button class="artifact" id="view-deck" disabled>Discussion deck <span>↗</span></button><a class="download" id="download-deck" href="/artifacts/deck.md" download="deck.md" title="Download discussion deck" hidden>↓</a></div>
+      <pre id="artifact-view">Artifacts will appear here after the session begins.</pre><img id="diagram-view" alt="Sol's solution direction diagram" hidden>
+      <div class="metric" id="metrics">Ready. Four conversation turns, one assessment, three artifact calls.</div>
+    </div></section>
   </div>
 </div>
 <script>
@@ -89,8 +102,18 @@
   const count = document.getElementById('count');
   const metrics = document.getElementById('metrics');
   const artifactView = document.getElementById('artifact-view');
+  const diagramView = document.getElementById('diagram-view');
   const conversationButton = document.getElementById('view-conversation');
   const jointButton = document.getElementById('view-joint');
+  const directionButton = document.getElementById('view-direction');
+  const diagramButton = document.getElementById('view-diagram');
+  const deckButton = document.getElementById('view-deck');
+  const artifactControls = {
+    'joint-assessment.md': [jointButton, document.getElementById('download-joint')],
+    'solution-direction.md': [directionButton, document.getElementById('download-direction')],
+    'solution-diagram.svg': [diagramButton, document.getElementById('download-diagram')],
+    'deck.md': [deckButton, document.getElementById('download-deck')]
+  };
   let source;
   let finished = false;
   const messageBodies = new Map();
@@ -109,11 +132,23 @@
     flowLabel.textContent = agent === 'bob' ? 'Bob → Sol' : 'Sol → Bob';
   }
   async function viewArtifact(name) {
+    artifactView.dataset.phase = '';
+    if (name.endsWith('.svg')) {
+      artifactView.hidden = true;
+      diagramView.hidden = false;
+      diagramView.src = '/artifacts/' + name + '?v=' + Date.now();
+      return;
+    }
+    diagramView.hidden = true;
+    artifactView.hidden = false;
     const response = await fetch('/artifacts/' + name);
     artifactView.textContent = response.ok ? await response.text() : 'Artifact is not available yet.';
   }
   conversationButton.onclick = () => viewArtifact('conversation.md');
   jointButton.onclick = () => viewArtifact('joint-assessment.md');
+  directionButton.onclick = () => viewArtifact('solution-direction.md');
+  diagramButton.onclick = () => viewArtifact('solution-diagram.svg');
+  deckButton.onclick = () => viewArtifact('deck.md');
   start.onclick = () => {
     finished = false;
     start.disabled = true;
@@ -121,8 +156,10 @@
     messageBodies.clear();
     artifactView.textContent = 'The session is running…';
     artifactView.dataset.phase = '';
+    artifactView.hidden = false;
+    diagramView.hidden = true;
     conversationButton.disabled = true;
-    jointButton.disabled = true;
+    for (const [button, download] of Object.values(artifactControls)) { button.disabled = true; download.hidden = true; }
     count.textContent = '0 / 4 messages';
     metrics.textContent = 'Running within the two-minute limit.';
     setStatus('Starting session', true);
@@ -134,13 +171,16 @@
       if (data.kind === 'state') {
         setAgentState(data.agent, data.state);
         if (data.state === 'thinking' || data.state === 'speaking') {
-          setStatus(data.phase === 'synthesis' ? 'Bob is ' + data.state + ' · synthesis' : data.agent.toUpperCase() + ' is ' + data.state, true);
+          const phase = {synthesis: 'joint assessment', solution: 'solution direction', diagram: 'solution diagram', deck: 'discussion deck'}[data.phase];
+          setStatus(data.agent.toUpperCase() + ' is ' + data.state + (phase ? ' · ' + phase : ''), true);
         }
       } else if (data.kind === 'delta') {
-        if (data.phase === 'synthesis') {
-          if (artifactView.dataset.phase !== 'synthesis') {
+        if (data.phase !== 'conversation') {
+          if (artifactView.dataset.phase !== data.phase) {
             artifactView.textContent = '';
-            artifactView.dataset.phase = 'synthesis';
+            artifactView.dataset.phase = data.phase;
+            artifactView.hidden = false;
+            diagramView.hidden = true;
           }
           artifactView.textContent += data.text;
         } else {
@@ -162,6 +202,9 @@
         animateDirection(data.agent);
         count.textContent = data.turn + ' / 4 messages';
         conversationButton.disabled = false;
+      } else if (data.kind === 'artifact') {
+        const controls = artifactControls[data.name];
+        if (controls) { controls[0].disabled = false; controls[1].hidden = false; viewArtifact(data.name); }
       } else if (data.kind === 'complete') {
         finished = true;
         source.close();
@@ -169,9 +212,9 @@
         setAgentState('bob', 'completed');
         setAgentState('sol', 'completed');
         setStatus('Session complete', false);
-        jointButton.disabled = false;
+        for (const [button, download] of Object.values(artifactControls)) { button.disabled = false; download.hidden = false; }
         metrics.textContent = `${data.elapsed}s · ${data.model_calls} model calls · ${data.tokens.total_tokens} tokens`;
-        viewArtifact('joint-assessment.md');
+        viewArtifact('deck.md');
       } else if (data.kind === 'failed') {
         finished = true;
         source.close();

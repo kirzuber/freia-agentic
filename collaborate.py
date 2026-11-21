@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import signal
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from time import perf_counter
 from typing import TypedDict
@@ -23,6 +24,9 @@ class SessionState(TypedDict):
     model_calls: int
     tokens: dict[str, int]
     joint_assessment: str
+    solution_direction: str
+    diagram_svg: str
+    deck: str
 
 
 def main() -> None:
@@ -48,8 +52,12 @@ def main() -> None:
     output_dir.mkdir(exist_ok=True)
     conversation_path = output_dir / "conversation.md"
     joint_path = output_dir / "joint-assessment.md"
+    direction_path = output_dir / "solution-direction.md"
+    diagram_path = output_dir / "solution-diagram.svg"
+    deck_path = output_dir / "deck.md"
     conversation_path.write_text("# Bob and Sol — True North DPO conversation\n\n")
-    joint_path.unlink(missing_ok=True)
+    for path in (joint_path, direction_path, diagram_path, deck_path):
+        path.unlink(missing_ok=True)
 
     def emit(kind: str, **data) -> None:
         if args.events:
@@ -139,8 +147,68 @@ def main() -> None:
         if not content or finish != "stop":
             raise RuntimeError(f"synthesis failed: finish_reason={finish}, content_chars={len(content)}")
         joint_path.write_text(content + "\n")
+        emit("artifact", name="joint-assessment.md")
         emit("state", agent="bob", state="waiting", phase="synthesis")
         return {"joint_assessment": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
+
+    def create_direction(state: SessionState) -> dict:
+        if state["model_calls"] != 5:
+            raise RuntimeError("solution direction requires the joint assessment")
+        response = stream_response(model_for("sol", 1400), [
+            SystemMessage(content=instructions["sol"] + "\n\nUse only the supplied assessments and conversation. No external tools or new research are available."),
+            HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nWrite solution-direction.md in at most 300 words. Propose one small, conditional solution direction with its discovery gate, a no-build alternative, key dependencies and risks. Keep unverified client systems and economics explicitly unknown. Cite only the source URLs already read. Return Markdown only."),
+        ], "sol", "solution")
+        content = str(response.content).strip()
+        finish = response.response_metadata.get("finish_reason")
+        if not content or finish != "stop":
+            raise RuntimeError(f"solution direction failed: finish_reason={finish}, content_chars={len(content)}")
+        direction_path.write_text(content + "\n")
+        emit("artifact", name="solution-direction.md")
+        emit("state", agent="sol", state="waiting", phase="solution")
+        return {"solution_direction": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
+
+    def create_diagram(state: SessionState) -> dict:
+        if state["model_calls"] != 6:
+            raise RuntimeError("diagram requires Sol's solution direction")
+        response = stream_response(model_for("sol", 2000), [
+            SystemMessage(content=instructions["sol"] + "\n\nCreate a simple, safe SVG diagram of your own solution direction. No external tools are available."),
+            HumanMessage(content="Your solution direction:\n" + state["solution_direction"] + "\n\nReturn only a compact standalone SVG, under 2000 characters, beginning with <svg and ending with </svg>. Use a 720x240 viewBox, one dark background rect, exactly three short labeled boxes, and two connecting lines. Choose box labels from your direction and mark conditional steps as conditional. No title, notes, scripts, links, images, CSS, external resources, or invented client systems."),
+        ], "sol", "diagram")
+        svg = str(response.content).strip()
+        finish = response.response_metadata.get("finish_reason")
+        if svg.startswith("```"):
+            svg = svg.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        if not svg or finish != "stop":
+            raise RuntimeError(f"diagram failed: finish_reason={finish}, content_chars={len(svg)}")
+        root = ET.fromstring(svg)
+        allowed = {"svg", "g", "rect", "line", "path", "circle", "ellipse", "polyline", "polygon", "text", "tspan"}
+        for element in root.iter():
+            if element.tag.rsplit("}", 1)[-1] not in allowed:
+                raise RuntimeError("diagram contains unsupported SVG elements")
+            if any(attribute.rsplit("}", 1)[-1].lower().startswith("on") or attribute.rsplit("}", 1)[-1].lower() in {"href", "style"} for attribute in element.attrib):
+                raise RuntimeError("diagram contains active or external SVG attributes")
+        if root.tag.rsplit("}", 1)[-1] != "svg":
+            raise RuntimeError("diagram response is not SVG")
+        diagram_path.write_text(svg + "\n")
+        emit("artifact", name="solution-diagram.svg")
+        emit("state", agent="sol", state="waiting", phase="diagram")
+        return {"diagram_svg": svg, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
+
+    def create_deck(state: SessionState) -> dict:
+        if state["model_calls"] != 7:
+            raise RuntimeError("deck requires Sol's solution direction and diagram")
+        response = stream_response(model_for("bob", 2400), [
+            SystemMessage(content=instructions["bob"] + "\n\nThe current user request authorizes a concise discussion deck. Use Sol's supplied solution direction as the technical basis; do not recreate it independently. No external tools or new research are available."),
+            HumanMessage(content=source_context + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nSol's solution direction:\n" + state["solution_direction"] + "\n\nWrite deck.md as exactly six Markdown slides, at most 450 words total, each headed '## Slide N — Title' with two to four concise bullets. This is an executive discussion deck for a prospective client, not a sales claim. Include source/access caveats, opportunity hypothesis, Sol's conditional direction and no-build alternative, discovery questions, and a decision gate. Cite only source URLs already read. Do not claim client pain, systems, budget, or ROI as facts."),
+        ], "bob", "deck")
+        content = str(response.content).strip()
+        finish = response.response_metadata.get("finish_reason")
+        if not content or finish != "stop":
+            raise RuntimeError(f"deck failed: finish_reason={finish}, content_chars={len(content)}")
+        deck_path.write_text(content + "\n")
+        emit("artifact", name="deck.md")
+        emit("state", agent="bob", state="waiting", phase="deck")
+        return {"deck": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
 
     graph = StateGraph(SessionState)
     graph.add_node("bob_first", lambda state: take_turn(state, "bob"))
@@ -148,12 +216,18 @@ def main() -> None:
     graph.add_node("bob_second", lambda state: take_turn(state, "bob"))
     graph.add_node("sol_second", lambda state: take_turn(state, "sol"))
     graph.add_node("synthesis", synthesize)
+    graph.add_node("solution", create_direction)
+    graph.add_node("diagram", create_diagram)
+    graph.add_node("deck", create_deck)
     graph.add_edge(START, "bob_first")
     graph.add_edge("bob_first", "sol_first")
     graph.add_edge("sol_first", "bob_second")
     graph.add_edge("bob_second", "sol_second")
     graph.add_edge("sol_second", "synthesis")
-    graph.add_edge("synthesis", END)
+    graph.add_edge("synthesis", "solution")
+    graph.add_edge("solution", "diagram")
+    graph.add_edge("diagram", "deck")
+    graph.add_edge("deck", END)
 
     def on_deadline(_signum, _frame):
         raise TimeoutError("two-minute collaboration deadline reached")
@@ -166,16 +240,22 @@ def main() -> None:
             "model_calls": 0,
             "tokens": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
             "joint_assessment": "",
-        }, config={"recursion_limit": 10})
+            "solution_direction": "",
+            "diagram_svg": "",
+            "deck": "",
+        }, config={"recursion_limit": 12})
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
 
     print("Completion: complete")
     print(f"Elapsed: {perf_counter() - start:.2f}s")
-    print(f"Model calls: {result['model_calls']} (4 conversation, 1 synthesis)")
+    print(f"Model calls: {result['model_calls']} (4 conversation, 1 synthesis, 3 artifact)")
     print("Tokens: " + " ".join(f"{key}={value}" for key, value in result["tokens"].items()))
     print(f"Conversation: {conversation_path}")
     print(f"Joint assessment: {joint_path}")
+    print(f"Solution direction: {direction_path}")
+    print(f"Solution diagram: {diagram_path}")
+    print(f"Deck: {deck_path}")
     emit("complete", elapsed=round(perf_counter() - start, 2), model_calls=result["model_calls"], tokens=result["tokens"])
 
 
