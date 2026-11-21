@@ -1,0 +1,4 @@
+model: deepseek-flash
+instructions: instructions/sol.md
+temperature: 0
+max_tokens: 1024
