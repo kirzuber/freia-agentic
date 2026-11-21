@@ -38,4 +38,4 @@ set -a; . ./.env; set +a
 .venv/bin/uvicorn room:app --host 127.0.0.1 --port 8000
 ```
 
-Open http://127.0.0.1:8000/ and click **Start session**. The room streams real conversation events and shows the generated Markdown artifacts.
+Open http://127.0.0.1:8000/ and click **Start session**. The room streams model text as it arrives, shows runtime agent states and message exchange, and displays the generated Markdown artifacts.

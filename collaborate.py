@@ -76,6 +76,7 @@ def main() -> None:
             temperature=config["temperature"],
             max_tokens=max_tokens,
             extra_body={"thinking": {"type": "disabled"}},
+            stream_usage=True,
             timeout=check_time(),
             max_retries=0,
         )
@@ -87,22 +88,38 @@ def main() -> None:
         usage = response.usage_metadata or {}
         return {key: state["tokens"][key] + usage.get(key, 0) for key in state["tokens"]}
 
+    def stream_response(model, messages, name: str, phase: str, turn: int | None = None):
+        emit("state", agent=name, state="thinking", phase=phase, turn=turn)
+        response = None
+        speaking = False
+        for chunk in model.stream(messages):
+            response = chunk if response is None else response + chunk
+            text = chunk.content if isinstance(chunk.content, str) else ""
+            if text:
+                if not speaking:
+                    emit("state", agent=name, state="speaking", phase=phase, turn=turn)
+                    speaking = True
+                emit("delta", agent=name, phase=phase, turn=turn, text=text)
+        if response is None:
+            raise RuntimeError(f"{name} returned no model response")
+        return response
+
     def take_turn(state: SessionState, name: str) -> dict:
         if state["model_calls"] >= 4:
             raise RuntimeError("conversation call limit reached")
-        emit("active", agent=name, turn=len(state["conversation"]) + 1)
-        response = model_for(name, configs[name]["max_tokens"]).invoke([
+        turn = len(state["conversation"]) + 1
+        response = stream_response(model_for(name, configs[name]["max_tokens"]), [
             SystemMessage(content=instructions[name] + "\n\nThis is a local conversation with the other named agent. Use only the supplied assessments and conversation; no external research tools are available. Keep your own professional judgment and identity."),
             HumanMessage(content=source_context + "\n\nConversation so far:\n" + transcript(state) + f"\n\nRespond as {name.title()} to your colleague. Ask or answer focused questions, challenge material assumptions, and state whether your own initial view changes and why. Keep this turn concise."),
-        ])
+        ], name, "conversation", turn)
         content = str(response.content).strip()
         finish = response.response_metadata.get("finish_reason")
         if not content or finish != "stop":
             raise RuntimeError(f"{name} turn failed: finish_reason={finish}, content_chars={len(content)}")
-        turn = len(state["conversation"]) + 1
         with conversation_path.open("a") as file:
             file.write(f"## Turn {turn} — {name.title()}\n\n{content}\n\n")
-        emit("message", agent=name, turn=turn, text=content)
+        emit("message_end", agent=name, turn=turn)
+        emit("state", agent=name, state="waiting", phase="conversation", turn=turn)
         print(f"\n{name.upper()} (turn {turn}):\n{content}\n", flush=True)
         return {
             "conversation": state["conversation"] + [{"speaker": name, "text": content}],
@@ -113,16 +130,16 @@ def main() -> None:
     def synthesize(state: SessionState) -> dict:
         if state["model_calls"] != 4:
             raise RuntimeError("synthesis requires four conversation turns")
-        emit("active", agent="bob", phase="synthesis")
-        response = model_for("bob", 2048).invoke([
+        response = stream_response(model_for("bob", 2048), [
             SystemMessage(content=instructions["bob"] + "\n\nSynthesize the actual Bob/Sol conversation faithfully. Do not invent agreement or new research."),
             HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nWrite a Markdown joint assessment of at most 450 words. Include a final recommendation, material changes from each initial assessment and why, unresolved disagreements, and evidence links already present in the initial assessments. Do not describe a disagreement as resolved unless both agents explicitly accepted the resolution. Do not call tools."),
-        ])
+        ], "bob", "synthesis")
         content = str(response.content).strip()
         finish = response.response_metadata.get("finish_reason")
         if not content or finish != "stop":
             raise RuntimeError(f"synthesis failed: finish_reason={finish}, content_chars={len(content)}")
         joint_path.write_text(content + "\n")
+        emit("state", agent="bob", state="waiting", phase="synthesis")
         return {"joint_assessment": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
 
     graph = StateGraph(SessionState)
