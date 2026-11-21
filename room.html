@@ -45,6 +45,9 @@
     @keyframes toBob { from { left: calc(100% - 13px); opacity: 1; } to { left: 0; opacity: 0; } }
     @keyframes waitingPulse { 50% { box-shadow: 0 0 0 7px #ffffff0a, 0 0 24px #ffffff1a; } }
     .columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 20px; }
+    .mission-panel { margin: 0 0 20px; padding: 18px 22px; border: 1px solid #283146; border-radius: 18px; background: #101725d9; }
+    .mission-panel h3 { margin: 0 0 10px; font-size: 14px; }
+    #mission-view { margin: 0; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #c9d4e4; font: 12px/1.55 ui-monospace, monospace; }
     .panel { border: 1px solid #283146; border-radius: 18px; background: #101725d9; overflow: hidden; }
     .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; border-bottom: 1px solid #273148; }
     .panel h3 { margin: 0; font-size: 14px; }
@@ -72,14 +75,15 @@
 <body>
 <div class="shell">
   <header>
-    <div class="brand"><div class="mark">F</div><div><div class="eyebrow">Agentic workspace</div><h1>FreIA <span style="color:#8090a9;font-weight:400">/ First visual room</span></h1></div></div>
-    <div class="controls"><span id="status" class="status">Ready to begin</span><button id="start">Start session ↗</button></div>
+    <div class="brand"><div class="mark">F</div><div><div class="eyebrow">Agentic workspace</div><h1>FreIA <span style="color:#8090a9;font-weight:400">/ The Consulting Room</span></h1></div></div>
+    <div class="controls"><span id="status" class="status">Preparing room</span><button id="start" disabled title="Available in FREIA-009">Execution available in FREIA-009</button></div>
   </header>
   <div class="stage">
     <section class="agent bob" id="bob"><div class="avatar">B</div><div><div class="eyebrow">Business strategy</div><h2>Bob</h2><p>Opportunity, relevance<br>and commercial judgment</p><span class="agent-state" id="bob-state">Waiting</span></div></section>
     <div class="exchange" id="exchange"><div class="rail"></div><div class="pulse"></div><span id="flow-label">Conversation channel</span></div>
     <section class="agent sol" id="sol"><div class="avatar">S</div><div><div class="eyebrow">Solution architecture</div><h2>Sol</h2><p>Technical plausibility<br>and delivery judgment</p><span class="agent-state" id="sol-state">Waiting</span></div></section>
   </div>
+  <section class="mission-panel"><h3>Approved mission · this visit only</h3><pre id="mission-view"></pre></section>
   <div class="columns">
     <section class="panel"><div class="panel-head"><h3>Live conversation</h3><small id="count">0 / 4 messages</small></div><div id="messages"><div class="empty">Start a session to see Bob and Sol exchange their views.</div></div></section>
     <section class="panel"><div class="panel-head"><h3>Session artifacts</h3><small>Local files</small></div><div class="side-body">
@@ -97,6 +101,10 @@
 <script>
   const start = document.getElementById('start');
   const status = document.getElementById('status');
+  const approvedMission = sessionStorage.getItem('freia_approved_mission');
+  sessionStorage.removeItem('freia_approved_mission');
+  document.getElementById('mission-view').textContent = approvedMission || 'No approved mission. Return to the entrance to prepare one.';
+  status.textContent = approvedMission ? 'Mission approved · execution disabled' : 'No approved mission';
   const messages = document.getElementById('messages');
   const exchange = document.getElementById('exchange');
   const flowLabel = document.getElementById('flow-label');

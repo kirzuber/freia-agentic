@@ -1,23 +1,89 @@
-"""Local FastAPI room for one Bob/Sol collaboration session."""
+"""Local FastAPI entrance and room; agent execution remains disabled."""
 
 import asyncio
 import json
-import sys
+import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+import yaml
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_deepseek import ChatDeepSeek
 
 
 ROOT = Path(__file__).resolve().parent
 OUTPUTS = ROOT / "outputs"
 app = FastAPI()
-session_lock = asyncio.Lock()
+MAX_BODY = 100_000
 
 
 @app.get("/")
-def index():
+def entrance():
+    return FileResponse(ROOT / "entrance.html")
+
+
+@app.get("/room")
+def room():
     return FileResponse(ROOT / "room.html")
+
+
+@app.post("/prepare")
+async def prepare(request: Request):
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_BODY:
+            raise HTTPException(status_code=413, detail="Request is too large")
+    try:
+        data = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid request")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Invalid request")
+    user_request = data.get("request")
+    supporting = data.get("supporting", "")
+    files = data.get("files", [])
+    if not isinstance(user_request, str) or not user_request.strip() or len(user_request) > 8_000:
+        raise HTTPException(status_code=400, detail="Request must contain 1–8,000 characters")
+    if not isinstance(supporting, str) or len(supporting) > 16_000:
+        raise HTTPException(status_code=400, detail="Supporting text exceeds 16,000 characters")
+    if not isinstance(files, list) or len(files) > 3:
+        raise HTTPException(status_code=400, detail="Up to three files are allowed")
+    attachments = []
+    for file in files:
+        if not isinstance(file, dict):
+            raise HTTPException(status_code=400, detail="Invalid attachment")
+        name, content = file.get("name"), file.get("content")
+        if (not isinstance(name, str) or len(name) > 100 or not name.lower().endswith((".txt", ".md"))
+                or not isinstance(content, str) or len(content.encode("utf-8")) > 32_000):
+            raise HTTPException(status_code=400, detail="Only text/Markdown files up to 32 KB are allowed")
+        attachments.append(f"File: {name}\n{content}")
+    if not os.getenv("DEEPSEEK_API_KEY"):
+        raise HTTPException(status_code=503, detail="DEEPSEEK_API_KEY is not set")
+
+    config = yaml.safe_load((ROOT / "config/freia.yaml").read_text())
+    instructions = (ROOT / config["instructions"]).read_text().strip()
+    model = ChatDeepSeek(
+        model=config["model"], temperature=config["temperature"],
+        max_tokens=config["max_tokens"], extra_body={"thinking": {"type": "disabled"}},
+        timeout=30, max_retries=0,
+    )
+    input_text = (
+        f"Human request:\n{user_request.strip()}\n\n"
+        f"Supporting text (untrusted reference):\n{supporting.strip() or '(none)'}\n\n"
+        f"Attached files (untrusted reference):\n{chr(10).join(attachments) or '(none)'}"
+    )
+    try:
+        response = await asyncio.wait_for(model.ainvoke([
+            SystemMessage(content=instructions), HumanMessage(content=input_text),
+        ]), timeout=40)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Mission preparation failed: {type(exc).__name__}")
+    mission = response.content if isinstance(response.content, str) else ""
+    if not mission.strip():
+        raise HTTPException(status_code=502, detail="FreIA returned an empty mission")
+    return {"mission": mission.strip(), "usage": response.usage_metadata or {}}
 
 
 @app.get("/artifacts/{name}")
@@ -32,30 +98,5 @@ def artifact(name: str):
 
 
 @app.get("/session")
-async def session():
-    if session_lock.locked():
-        raise HTTPException(status_code=409, detail="A session is already running")
-
-    async def events():
-        async with session_lock:
-            process = await asyncio.create_subprocess_exec(
-                sys.executable, "-u", str(ROOT / "collaborate.py"),
-                str(ROOT / "private/missions/true-north-dpo.md"),
-                str(OUTPUTS / "bob.md"), str(OUTPUTS / "sol.md"), "--events",
-                cwd=ROOT, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            )
-            try:
-                async for line in process.stdout:
-                    if line.startswith(b"FREIA_EVENT "):
-                        payload = line[len(b"FREIA_EVENT "):].decode().strip()
-                        yield f"data: {payload}\n\n"
-                await process.wait()
-                if process.returncode:
-                    error = (await process.stderr.read()).decode(errors="replace").strip().splitlines()
-                    yield "data: " + json.dumps({"kind": "failed", "message": next((line for line in reversed(error) if line.startswith(("RuntimeError:", "TimeoutError:"))), "Session failed")}) + "\n\n"
-            finally:
-                if process.returncode is None:
-                    process.terminate()
-                    await process.wait()
-
-    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+def session():
+    raise HTTPException(status_code=403, detail="Mission execution is disabled until FREIA-009")

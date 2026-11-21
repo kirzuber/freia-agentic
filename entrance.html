@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FreIA — Prepare mission</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;background:#090d16;color:#e8edf7}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -10%,#1b2440,#090d16 52%)}.shell{max-width:1120px;margin:auto;padding:28px 30px 70px}header{display:flex;align-items:center;gap:13px;border-bottom:1px solid #283146;padding-bottom:24px}.mark{width:39px;height:39px;border-radius:11px;display:grid;place-items:center;background:linear-gradient(135deg,#60e1ca,#6b87ff);color:#07111a;font-size:20px;font-weight:900}.eyebrow{color:#7f8da8;font-size:11px;letter-spacing:.18em;text-transform:uppercase;margin-bottom:4px}h1{font-size:22px;margin:0;letter-spacing:-.04em}.intro{margin:44px 0 28px}h2{font-size:clamp(27px,4vw,43px);letter-spacing:-.04em;margin:0 0 9px}.intro p,.hint{color:#9baac2;line-height:1.55}.layout{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(245px,.8fr);gap:20px}.panel{border:1px solid #283146;border-radius:18px;background:#101725d9;padding:24px}.panel h3{margin:0 0 19px;font-size:15px}label{display:block;margin:18px 0 8px;color:#cbd7e8;font-size:13px;font-weight:650}textarea,input[type=file]{width:100%;border:1px solid #344158;border-radius:10px;background:#111b2b;color:#e8edf7;font:14px/1.5 inherit;padding:13px;outline:none}textarea{resize:vertical;min-height:125px;font:14px/1.5 ui-sans-serif,system-ui,sans-serif}#request{min-height:170px}textarea:focus,input:focus{border-color:#6adccf}.hint{font-size:12px;margin:7px 0 0}.room{border:1px solid #3b4d62;border-radius:13px;padding:18px;background:#182539}.room strong{display:block;font-size:17px}.agents{display:flex;gap:10px;margin:15px 0}.avatar{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;font-weight:800}.bob{background:#123c43;color:#74f0dc}.sol{background:#51331e;color:#ffd19a}.room p{font-size:12px;line-height:1.55;color:#9baac2;margin:0}button{cursor:pointer;border:0;border-radius:10px;padding:12px 18px;font:700 13px ui-sans-serif,system-ui,sans-serif}button:disabled{opacity:.55;cursor:default}.primary{background:#d7f770;color:#101715;margin-top:20px}.secondary{background:#64dcca;color:#092022;margin-top:15px}.notice{min-height:22px;color:#9baac2;font-size:13px;margin-top:12px}.notice.error{color:#ffad9d}.preview{margin-top:20px}.preview textarea{min-height:390px;white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace}.preview[hidden]{display:none}@media(max-width:760px){.layout{grid-template-columns:1fr}.shell{padding:20px}}
+  </style>
+</head>
+<body><div class="shell">
+<header><div class="mark">F</div><div><div class="eyebrow">Agentic workspace</div><h1>FreIA <span style="color:#8090a9;font-weight:400">/ Intelligent entrance</span></h1></div></header>
+<div class="intro"><div class="eyebrow">Start with intent</div><h2>What would you like to work on?</h2><p>FreIA will shape your request into a mission for Bob and Sol. Review and edit it before entering the room.</p></div>
+<div class="layout"><main class="panel"><h3>Your request</h3><form id="form">
+<label for="request">Describe the work</label><textarea id="request" maxlength="8000" required placeholder="Describe the decision, problem or opportunity you want the team to address."></textarea>
+<label for="supporting">Supporting context <span style="color:#8090a9;font-weight:400">(optional)</span></label><textarea id="supporting" maxlength="16000" placeholder="Add facts, constraints, links or background for reference."></textarea>
+<label for="files">Text or Markdown files <span style="color:#8090a9;font-weight:400">(optional)</span></label><input id="files" type="file" accept=".txt,.md,text/plain,text/markdown" multiple><p class="hint">Up to 3 files, 32 KB each. Content stays in this browser session and the preparation request.</p>
+<button class="primary" id="prepare" type="submit">Prepare Mission ↗</button><div class="notice" id="notice" role="status"></div></form></main>
+<aside class="panel"><h3>Available room</h3><div class="room"><strong>The Consulting Room</strong><div class="agents"><div class="avatar bob">B</div><div class="avatar sol">S</div></div><p>Bob brings business and strategy judgment. Sol brings solution architecture and delivery judgment.</p></div><p class="hint" style="margin-top:18px">Mission execution will be enabled in FREIA-009. You can prepare and approve a mission now.</p></aside></div>
+<section class="panel preview" id="preview-panel" hidden><h3>Mission preview · editable</h3><p class="hint">Check the objective, context, supporting materials, expected outcomes and boundaries. Edit anything before approval.</p><label for="preview">Proposed mission</label><textarea id="preview"></textarea><button class="secondary" id="approve" type="button">Approve Mission &amp; Enter Room ↗</button></section>
+</div><script>
+const key='freia_approved_mission'; sessionStorage.removeItem(key);
+const form=document.getElementById('form'), notice=document.getElementById('notice'), prepare=document.getElementById('prepare'), preview=document.getElementById('preview');
+form.addEventListener('submit',async(event)=>{
+  event.preventDefault(); notice.className='notice'; prepare.disabled=true; notice.textContent='Preparing mission…';
+  try{
+    const picked=[...document.getElementById('files').files];
+    if(picked.length>3 || picked.some(f=>f.size>32000 || !/\.(txt|md)$/i.test(f.name))) throw new Error('Choose up to 3 .txt or .md files, each at most 32 KB.');
+    const files=await Promise.all(picked.map(async f=>({name:f.name,content:await f.text()})));
+    const response=await fetch('/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request:document.getElementById('request').value,supporting:document.getElementById('supporting').value,files})});
+    const result=await response.json(); if(!response.ok) throw new Error(result.detail||'Mission preparation failed');
+    preview.value=result.mission; document.getElementById('preview-panel').hidden=false; notice.textContent='Mission ready to review.'; document.getElementById('preview-panel').scrollIntoView({behavior:'smooth'});
+  }catch(error){notice.className='notice error';notice.textContent=error.message}finally{prepare.disabled=false}
+});
+document.getElementById('approve').onclick=()=>{if(!preview.value.trim()){notice.className='notice error';notice.textContent='The mission cannot be empty.';return}sessionStorage.setItem(key,preview.value.trim());location.href='/room'};
+</script></body></html>
