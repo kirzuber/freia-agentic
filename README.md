@@ -20,3 +20,13 @@ The Git-ignored `.env` file must contain `DEEPSEEK_API_KEY=...`. Bob's and Sol's
 ```
 
 Each command writes `outputs/bob.md` or `outputs/sol.md` and prints elapsed time, token usage, and web requests. Sessions allow at most four model calls and three webpage requests, with a two-minute deadline. `.env`, `private/`, `private_missions/`, and `outputs/` are ignored by Git.
+
+## First conversation
+
+With `DEEPSEEK_API_KEY` loaded, run:
+
+```sh
+.venv/bin/python collaborate.py private/missions/true-north-dpo.md outputs/bob.md outputs/sol.md
+```
+
+This uses four alternating Bob/Sol calls and one Bob synthesis call, with no web tools. It prints each message and writes `outputs/conversation.md` and `outputs/joint-assessment.md`.
