@@ -1,6 +1,7 @@
 """Run one bounded Bob/Sol conversation over existing local assessments."""
 
 import argparse
+import json
 import os
 import signal
 from pathlib import Path
@@ -29,6 +30,7 @@ def main() -> None:
     parser.add_argument("mission", type=Path)
     parser.add_argument("bob_assessment", type=Path)
     parser.add_argument("sol_assessment", type=Path)
+    parser.add_argument("--events", action="store_true", help="Emit JSON events for the local room")
     args = parser.parse_args()
     if not os.getenv("DEEPSEEK_API_KEY"):
         parser.error("set DEEPSEEK_API_KEY in the environment")
@@ -48,6 +50,10 @@ def main() -> None:
     joint_path = output_dir / "joint-assessment.md"
     conversation_path.write_text("# Bob and Sol — True North DPO conversation\n\n")
     joint_path.unlink(missing_ok=True)
+
+    def emit(kind: str, **data) -> None:
+        if args.events:
+            print("FREIA_EVENT " + json.dumps({"kind": kind, **data}), flush=True)
 
     start = perf_counter()
     deadline = start + DEADLINE_SECONDS
@@ -84,6 +90,7 @@ def main() -> None:
     def take_turn(state: SessionState, name: str) -> dict:
         if state["model_calls"] >= 4:
             raise RuntimeError("conversation call limit reached")
+        emit("active", agent=name, turn=len(state["conversation"]) + 1)
         response = model_for(name, configs[name]["max_tokens"]).invoke([
             SystemMessage(content=instructions[name] + "\n\nThis is a local conversation with the other named agent. Use only the supplied assessments and conversation; no external research tools are available. Keep your own professional judgment and identity."),
             HumanMessage(content=source_context + "\n\nConversation so far:\n" + transcript(state) + f"\n\nRespond as {name.title()} to your colleague. Ask or answer focused questions, challenge material assumptions, and state whether your own initial view changes and why. Keep this turn concise."),
@@ -95,6 +102,7 @@ def main() -> None:
         turn = len(state["conversation"]) + 1
         with conversation_path.open("a") as file:
             file.write(f"## Turn {turn} — {name.title()}\n\n{content}\n\n")
+        emit("message", agent=name, turn=turn, text=content)
         print(f"\n{name.upper()} (turn {turn}):\n{content}\n", flush=True)
         return {
             "conversation": state["conversation"] + [{"speaker": name, "text": content}],
@@ -105,9 +113,10 @@ def main() -> None:
     def synthesize(state: SessionState) -> dict:
         if state["model_calls"] != 4:
             raise RuntimeError("synthesis requires four conversation turns")
+        emit("active", agent="bob", phase="synthesis")
         response = model_for("bob", 2048).invoke([
             SystemMessage(content=instructions["bob"] + "\n\nSynthesize the actual Bob/Sol conversation faithfully. Do not invent agreement or new research."),
-            HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nWrite a concise Markdown joint assessment with: final recommendation, material changes from each initial assessment and why, unresolved disagreements, and evidence links already present in the initial assessments. Do not describe a disagreement as resolved unless both agents explicitly accepted the resolution. Do not call tools."),
+            HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nWrite a Markdown joint assessment of at most 450 words. Include a final recommendation, material changes from each initial assessment and why, unresolved disagreements, and evidence links already present in the initial assessments. Do not describe a disagreement as resolved unless both agents explicitly accepted the resolution. Do not call tools."),
         ])
         content = str(response.content).strip()
         finish = response.response_metadata.get("finish_reason")
@@ -150,6 +159,7 @@ def main() -> None:
     print("Tokens: " + " ".join(f"{key}={value}" for key, value in result["tokens"].items()))
     print(f"Conversation: {conversation_path}")
     print(f"Joint assessment: {joint_path}")
+    emit("complete", elapsed=round(perf_counter() - start, 2), model_calls=result["model_calls"], tokens=result["tokens"])
 
 
 if __name__ == "__main__":

@@ -30,3 +30,12 @@ With `DEEPSEEK_API_KEY` loaded, run:
 ```
 
 This uses four alternating Bob/Sol calls and one Bob synthesis call, with no web tools. It prints each message and writes `outputs/conversation.md` and `outputs/joint-assessment.md`.
+
+## Visual room
+
+```sh
+set -a; . ./.env; set +a
+.venv/bin/uvicorn room:app --host 127.0.0.1 --port 8000
+```
+
+Open http://127.0.0.1:8000/ and click **Start session**. The room streams real conversation events and shows the generated Markdown artifacts.
