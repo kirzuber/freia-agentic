@@ -22,9 +22,9 @@
     #start:disabled { opacity: .55; cursor: default; }
     .stage { display: grid; grid-template-columns: minmax(180px,1fr) minmax(100px,1.2fr) minmax(180px,1fr); align-items: center; gap: 20px; margin: 28px 0; }
     .agent { min-height: 148px; border: 1px solid #2a344b; border-radius: 17px; background: #111827cc; padding: 23px; display: flex; align-items: center; gap: 17px; transition: border-color .25s, box-shadow .25s, transform .25s; }
-    .agent.thinking { transform: translateY(-2px); animation: waitingPulse 1.6s ease-in-out infinite; }
-    .agent.bob.thinking, .agent.bob.speaking { border-color: #58d9cb; }
-    .agent.sol.thinking, .agent.sol.speaking { border-color: #ffc47b; }
+    .agent.thinking, .agent.reading { transform: translateY(-2px); animation: waitingPulse 1.6s ease-in-out infinite; }
+    .agent.bob.thinking, .agent.bob.reading, .agent.bob.speaking { border-color: #58d9cb; }
+    .agent.sol.thinking, .agent.sol.reading, .agent.sol.speaking { border-color: #ffc47b; }
     .agent.speaking { box-shadow: 0 0 20px #ffffff18; }
     .agent.completed { border-color: #597e73; }
     .agent-state { display: inline-block; margin-top: 9px; color: #8290a8; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
@@ -76,7 +76,7 @@
 <div class="shell">
   <header>
     <div class="brand"><div class="mark">F</div><div><div class="eyebrow">Agentic workspace</div><h1>FreIA <span style="color:#8090a9;font-weight:400">/ The Consulting Room</span></h1></div></div>
-    <div class="controls"><span id="status" class="status">Preparing room</span><button id="start" disabled title="Available in FREIA-009">Execution available in FREIA-009</button></div>
+    <div class="controls"><span id="status" class="status">Preparing room</span><button id="start" disabled>Start session ↗</button></div>
   </header>
   <div class="stage">
     <section class="agent bob" id="bob"><div class="avatar">B</div><div><div class="eyebrow">Business strategy</div><h2>Bob</h2><p>Opportunity, relevance<br>and commercial judgment</p><span class="agent-state" id="bob-state">Waiting</span></div></section>
@@ -87,7 +87,9 @@
   <div class="columns">
     <section class="panel"><div class="panel-head"><h3>Live conversation</h3><small id="count">0 / 4 messages</small></div><div id="messages"><div class="empty">Start a session to see Bob and Sol exchange their views.</div></div></section>
     <section class="panel"><div class="panel-head"><h3>Session artifacts</h3><small>Local files</small></div><div class="side-body">
-      <button class="artifact" id="view-conversation" disabled>Conversation transcript <span>↗</span></button>
+      <div class="artifact-row"><button class="artifact" id="view-bob" disabled>Bob research <span>↗</span></button><a class="download" id="download-bob" href="/artifacts/bob.md" download="bob.md" hidden>↓</a></div>
+      <div class="artifact-row"><button class="artifact" id="view-sol" disabled>Sol research <span>↗</span></button><a class="download" id="download-sol" href="/artifacts/sol.md" download="sol.md" hidden>↓</a></div>
+      <div class="artifact-row"><button class="artifact" id="view-conversation" disabled>Conversation transcript <span>↗</span></button><a class="download" id="download-conversation" href="/artifacts/conversation.md" download="conversation.md" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-joint" disabled>Joint assessment <span>↗</span></button><a class="download" id="download-joint" href="/artifacts/joint-assessment.md" download="joint-assessment.md" title="Download joint assessment" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-direction" disabled>Solution direction <span>↗</span></button><a class="download" id="download-direction" href="/artifacts/solution-direction.md" download="solution-direction.md" title="Download solution direction" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-diagram" disabled>Solution diagram <span>↗</span></button><a class="download" id="download-diagram" href="/artifacts/solution-diagram.svg" download="solution-diagram.svg" title="Download solution diagram" hidden>↓</a></div>
@@ -101,10 +103,12 @@
 <script>
   const start = document.getElementById('start');
   const status = document.getElementById('status');
-  const approvedMission = sessionStorage.getItem('freia_approved_mission');
+  let approvedContext;
+  try { approvedContext = JSON.parse(sessionStorage.getItem('freia_approved_mission')); } catch (_) { approvedContext = null; }
   sessionStorage.removeItem('freia_approved_mission');
-  document.getElementById('mission-view').textContent = approvedMission || 'No approved mission. Return to the entrance to prepare one.';
-  status.textContent = approvedMission ? 'Mission approved · execution disabled' : 'No approved mission';
+  document.getElementById('mission-view').textContent = approvedContext?.mission || 'No approved mission. Return to the entrance to prepare one.';
+  status.textContent = approvedContext?.mission ? 'Mission approved · ready' : 'No approved mission';
+  start.disabled = !approvedContext?.mission;
   const messages = document.getElementById('messages');
   const exchange = document.getElementById('exchange');
   const flowLabel = document.getElementById('flow-label');
@@ -119,6 +123,9 @@
   const deckButton = document.getElementById('view-deck');
   const presentationButton = document.getElementById('view-presentation');
   const artifactControls = {
+    'bob.md': [document.getElementById('view-bob'), document.getElementById('download-bob')],
+    'sol.md': [document.getElementById('view-sol'), document.getElementById('download-sol')],
+    'conversation.md': [conversationButton, document.getElementById('download-conversation')],
     'joint-assessment.md': [jointButton, document.getElementById('download-joint')],
     'solution-direction.md': [directionButton, document.getElementById('download-direction')],
     'solution-diagram.svg': [diagramButton, document.getElementById('download-diagram')],
@@ -132,7 +139,7 @@
   function setStatus(text, live) { status.textContent = text; status.classList.toggle('live', live); }
   function setAgentState(agent, state, label = state) {
     const card = document.getElementById(agent);
-    card.classList.remove('thinking', 'speaking', 'waiting', 'completed');
+    card.classList.remove('thinking', 'reading', 'speaking', 'waiting', 'completed');
     card.classList.add(state);
     document.getElementById(agent + '-state').textContent = label;
   }
@@ -156,6 +163,8 @@
     artifactView.textContent = response.ok ? await response.text() : 'Artifact is not available yet.';
   }
   conversationButton.onclick = () => viewArtifact('conversation.md');
+  document.getElementById('view-bob').onclick = () => viewArtifact('bob.md');
+  document.getElementById('view-sol').onclick = () => viewArtifact('sol.md');
   jointButton.onclick = () => viewArtifact('joint-assessment.md');
   directionButton.onclick = () => viewArtifact('solution-direction.md');
   diagramButton.onclick = () => viewArtifact('solution-diagram.svg');
@@ -173,19 +182,27 @@
     conversationButton.disabled = true;
     for (const [button, download] of Object.values(artifactControls)) { button.disabled = true; download.hidden = true; }
     count.textContent = '0 / 4 messages';
-    metrics.textContent = 'Running within the two-minute limit.';
+    metrics.textContent = 'Running within the six-minute overall limit.';
     setStatus('Starting session', true);
     setAgentState('bob', 'waiting');
     setAgentState('sol', 'waiting');
-    source = new EventSource('/session');
+    const controller = new AbortController();
+    source = {close: () => controller.abort()};
     source.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.kind === 'state') {
-        const activity = {synthesis: 'Creating assessment', solution: 'Creating direction', diagram: 'Creating diagram', deck: 'Creating deck'}[data.phase];
+        const activity = {research: data.state === 'reading' ? 'Reading webpage' : 'Researching', synthesis: 'Creating assessment', solution: 'Creating direction', diagram: 'Creating diagram', deck: 'Creating deck'}[data.phase];
         setAgentState(data.agent, data.state, activity && data.state !== 'waiting' ? activity : data.state);
-        if (data.state === 'thinking' || data.state === 'speaking') {
+        if (['thinking', 'speaking', 'reading'].includes(data.state)) {
           setStatus(activity ? data.agent.toUpperCase() + ' · ' + activity : data.agent.toUpperCase() + ' is ' + data.state, true);
         }
+      } else if (data.kind === 'tool') {
+        const card = document.createElement('article'); card.className = 'message ' + data.agent;
+        const label = document.createElement('strong'); label.textContent = data.agent + ' · webpage';
+        const body = document.createElement('pre'); body.textContent = data.url + '\n' + data.result;
+        card.append(label, body); messages.append(card); messages.scrollTop = messages.scrollHeight;
+      } else if (data.kind === 'research_complete') {
+        metrics.textContent = `${data.agent} research · ${data.model_calls} model calls · ${data.webpage_requests} webpage requests · ${data.tokens.total_tokens} tokens`;
       } else if (data.kind === 'delta') {
         if (data.phase !== 'conversation') {
           if (artifactView.dataset.phase !== data.phase) {
@@ -225,7 +242,7 @@
         setAgentState('sol', 'completed');
         setStatus('Session complete', false);
         for (const [button, download] of Object.values(artifactControls)) { button.disabled = false; download.hidden = false; }
-        metrics.textContent = `${data.elapsed}s · ${data.model_calls} model calls · ${data.tokens.total_tokens} tokens`;
+        metrics.textContent = `${data.elapsed}s · ${data.model_calls} model calls · ${data.tool_calls} tool calls · ${data.tokens.total_tokens} tokens`;
         viewArtifact('deck.md');
       } else if (data.kind === 'failed') {
         finished = true;
@@ -234,16 +251,33 @@
         setAgentState('bob', 'waiting');
         setAgentState('sol', 'waiting');
         setStatus('Session failed', false);
-        metrics.textContent = data.message;
+        metrics.textContent = `${data.message} · ${data.available.length} partial artifacts available`;
       }
     };
-    source.onerror = () => {
+    source.onerror = (error) => {
       if (!finished) {
         finished = true; source.close(); start.disabled = false;
         setAgentState('bob', 'waiting'); setAgentState('sol', 'waiting');
         setStatus('Connection ended', false);
+        metrics.textContent = error?.message || 'Connection ended before completion.';
       }
     };
+    (async () => {
+      try {
+        const response = await fetch('/session', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(approvedContext), signal:controller.signal});
+        if (!response.ok) { const error=await response.json(); throw new Error(error.detail || 'Session could not start'); }
+        const reader=response.body.getReader(), decoder=new TextDecoder(); let buffer='';
+        while (true) {
+          const {value,done}=await reader.read(); if(done) break;
+          buffer += decoder.decode(value,{stream:true}); let end;
+          while ((end=buffer.indexOf('\n\n')) !== -1) {
+            const packet=buffer.slice(0,end); buffer=buffer.slice(end+2);
+            for (const line of packet.split('\n')) if(line.startsWith('data: ')) source.onmessage({data:line.slice(6)});
+          }
+        }
+        if(!finished) source.onerror(new Error('Session stream ended before completion'));
+      } catch(error) { if(!finished) source.onerror(error); }
+    })();
   };
 </script>
 </body>

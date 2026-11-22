@@ -16,10 +16,10 @@
 <label for="supporting">Supporting context <span style="color:#8090a9;font-weight:400">(optional)</span></label><textarea id="supporting" maxlength="16000" placeholder="Add facts, constraints, links or background for reference."></textarea>
 <label for="files">Text or Markdown files <span style="color:#8090a9;font-weight:400">(optional)</span></label><input id="files" type="file" accept=".txt,.md,text/plain,text/markdown" multiple><p class="hint">Up to 3 files, 32 KB each. Content stays in this browser session and the preparation request.</p>
 <button class="primary" id="prepare" type="submit">Prepare Mission ↗</button><div class="notice" id="notice" role="status"></div></form></main>
-<aside class="panel"><h3>Available room</h3><div class="room"><strong>The Consulting Room</strong><div class="agents"><div class="avatar bob">B</div><div class="avatar sol">S</div></div><p>Bob brings business and strategy judgment. Sol brings solution architecture and delivery judgment.</p></div><p class="hint" style="margin-top:18px">Mission execution will be enabled in FREIA-009. You can prepare and approve a mission now.</p></aside></div>
+<aside class="panel"><h3>Available room</h3><div class="room"><strong>The Consulting Room</strong><div class="agents"><div class="avatar bob">B</div><div class="avatar sol">S</div></div><p>Bob brings business and strategy judgment. Sol brings solution architecture and delivery judgment.</p></div><p class="hint" style="margin-top:18px">After approval, Bob and Sol research independently, discuss their findings and create a combined presentation.</p></aside></div>
 <section class="panel preview" id="preview-panel" hidden><h3>Mission preview · editable</h3><p class="hint">Check the objective, context, supporting materials, expected outcomes and boundaries. Edit anything before approval.</p><label for="preview">Proposed mission</label><textarea id="preview"></textarea><button class="secondary" id="approve" type="button">Approve Mission &amp; Enter Room ↗</button></section>
 </div><script>
-const key='freia_approved_mission'; sessionStorage.removeItem(key);
+const key='freia_approved_mission'; sessionStorage.removeItem(key); let preparedInput;
 const form=document.getElementById('form'), notice=document.getElementById('notice'), prepare=document.getElementById('prepare'), preview=document.getElementById('preview');
 form.addEventListener('submit',async(event)=>{
   event.preventDefault(); notice.className='notice'; prepare.disabled=true; notice.textContent='Preparing mission…';
@@ -27,10 +27,11 @@ form.addEventListener('submit',async(event)=>{
     const picked=[...document.getElementById('files').files];
     if(picked.length>3 || picked.some(f=>f.size>32000 || !/\.(txt|md)$/i.test(f.name))) throw new Error('Choose up to 3 .txt or .md files, each at most 32 KB.');
     const files=await Promise.all(picked.map(async f=>({name:f.name,content:await f.text()})));
-    const response=await fetch('/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request:document.getElementById('request').value,supporting:document.getElementById('supporting').value,files})});
+    const input={request:document.getElementById('request').value,supporting:document.getElementById('supporting').value,files};
+    const response=await fetch('/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
     const result=await response.json(); if(!response.ok) throw new Error(result.detail||'Mission preparation failed');
-    preview.value=result.mission; document.getElementById('preview-panel').hidden=false; notice.textContent='Mission ready to review.'; document.getElementById('preview-panel').scrollIntoView({behavior:'smooth'});
+    preparedInput=input; preview.value=result.mission; document.getElementById('preview-panel').hidden=false; notice.textContent='Mission ready to review.'; document.getElementById('preview-panel').scrollIntoView({behavior:'smooth'});
   }catch(error){notice.className='notice error';notice.textContent=error.message}finally{prepare.disabled=false}
 });
-document.getElementById('approve').onclick=()=>{if(!preview.value.trim()){notice.className='notice error';notice.textContent='The mission cannot be empty.';return}sessionStorage.setItem(key,preview.value.trim());location.href='/room'};
+document.getElementById('approve').onclick=()=>{if(!preview.value.trim()||!preparedInput){notice.className='notice error';notice.textContent='Prepare a nonempty mission first.';return}sessionStorage.setItem(key,JSON.stringify({...preparedInput,mission:preview.value.trim()}));location.href='/room'};
 </script></body></html>

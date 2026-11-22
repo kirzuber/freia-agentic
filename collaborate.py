@@ -36,6 +36,7 @@ def main() -> None:
     parser.add_argument("bob_assessment", type=Path)
     parser.add_argument("sol_assessment", type=Path)
     parser.add_argument("--events", action="store_true", help="Emit JSON events for the local room")
+    parser.add_argument("--output-dir", type=Path, default=ROOT / "outputs")
     args = parser.parse_args()
     if not os.getenv("DEEPSEEK_API_KEY"):
         parser.error("set DEEPSEEK_API_KEY in the environment")
@@ -49,15 +50,15 @@ def main() -> None:
         parser.error("mission and both initial assessments must contain text")
     configs = {name: yaml.safe_load((ROOT / "config" / f"{name}.yaml").read_text()) for name in ("bob", "sol")}
     instructions = {name: (ROOT / configs[name]["instructions"]).read_text().strip() for name in configs}
-    output_dir = ROOT / "outputs"
-    output_dir.mkdir(exist_ok=True)
+    output_dir = args.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
     conversation_path = output_dir / "conversation.md"
     joint_path = output_dir / "joint-assessment.md"
     direction_path = output_dir / "solution-direction.md"
     diagram_path = output_dir / "solution-diagram.svg"
     deck_path = output_dir / "deck.md"
     presentation_path = output_dir / "deck.html"
-    conversation_path.write_text("# Bob and Sol — True North DPO conversation\n\n")
+    conversation_path.write_text("# Bob and Sol — conversation\n\n")
     for path in (joint_path, direction_path, diagram_path, deck_path, presentation_path):
         path.unlink(missing_ok=True)
 

@@ -38,7 +38,8 @@ set -a; . ./.env; set +a
 .venv/bin/uvicorn room:app --host 127.0.0.1 --port 8000
 ```
 
-Open http://127.0.0.1:8000/ to enter a request, optional context and up to three text/Markdown files (32 KB each). **Prepare Mission** makes one DeepSeek call using `instructions/freia.md` and `config/freia.yaml`. Review or edit the mission, then **Approve Mission & Enter Room** passes it to the room for this visit only. Room execution is disabled until FREIA-009; the earlier True North session cannot start from the interface.
+Open http://127.0.0.1:8000/ to enter a request, optional context and up to three text/Markdown files (32 KB each). **Prepare Mission** makes one DeepSeek call using `instructions/freia.md` and `config/freia.yaml`. Review or edit the mission, then **Approve Mission & Enter Room** passes it to the room for this visit only.
+In FREIA-009, **Start session** runs fresh independent Bob and Sol research followed by their existing collaboration and artifact workflow. Outputs are isolated per session and downloaded from the current room run.
 
 After the joint assessment, Sol writes `outputs/solution-direction.md` and `outputs/solution-diagram.svg`; Bob then uses Sol's direction to write the six-slide `outputs/deck.md`. The room previews and downloads all four final artifacts.
 
