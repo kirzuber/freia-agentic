@@ -5,3 +5,4 @@ httpx
 langgraph
 fastapi
 uvicorn
+tavily-python

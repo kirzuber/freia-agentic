@@ -22,9 +22,9 @@
     #start:disabled { opacity: .55; cursor: default; }
     .stage { display: grid; grid-template-columns: minmax(180px,1fr) minmax(100px,1.2fr) minmax(180px,1fr); align-items: center; gap: 20px; margin: 28px 0; }
     .agent { min-height: 148px; border: 1px solid #2a344b; border-radius: 17px; background: #111827cc; padding: 23px; display: flex; align-items: center; gap: 17px; transition: border-color .25s, box-shadow .25s, transform .25s; }
-    .agent.thinking, .agent.reading { transform: translateY(-2px); animation: waitingPulse 1.6s ease-in-out infinite; }
-    .agent.bob.thinking, .agent.bob.reading, .agent.bob.speaking { border-color: #58d9cb; }
-    .agent.sol.thinking, .agent.sol.reading, .agent.sol.speaking { border-color: #ffc47b; }
+    .agent.thinking, .agent.reading, .agent.searching { transform: translateY(-2px); animation: waitingPulse 1.6s ease-in-out infinite; }
+    .agent.bob.thinking, .agent.bob.reading, .agent.bob.searching, .agent.bob.speaking { border-color: #58d9cb; }
+    .agent.sol.thinking, .agent.sol.reading, .agent.sol.searching, .agent.sol.speaking { border-color: #ffc47b; }
     .agent.speaking { box-shadow: 0 0 20px #ffffff18; }
     .agent.completed { border-color: #597e73; }
     .agent-state { display: inline-block; margin-top: 9px; color: #8290a8; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
@@ -139,7 +139,7 @@
   function setStatus(text, live) { status.textContent = text; status.classList.toggle('live', live); }
   function setAgentState(agent, state, label = state) {
     const card = document.getElementById(agent);
-    card.classList.remove('thinking', 'reading', 'speaking', 'waiting', 'completed');
+    card.classList.remove('thinking', 'reading', 'searching', 'speaking', 'waiting', 'completed');
     card.classList.add(state);
     document.getElementById(agent + '-state').textContent = label;
   }
@@ -191,18 +191,18 @@
     source.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.kind === 'state') {
-        const activity = {research: data.state === 'reading' ? 'Reading webpage' : 'Researching', synthesis: 'Creating assessment', solution: 'Creating direction', diagram: 'Creating diagram', deck: 'Creating deck'}[data.phase];
+        const activity = {research: data.state === 'reading' ? 'Reading webpage' : data.state === 'searching' ? 'Searching web' : 'Researching', synthesis: 'Creating assessment', solution: 'Creating direction', diagram: 'Creating diagram', deck: 'Creating deck'}[data.phase];
         setAgentState(data.agent, data.state, activity && data.state !== 'waiting' ? activity : data.state);
-        if (['thinking', 'speaking', 'reading'].includes(data.state)) {
+        if (['thinking', 'speaking', 'reading', 'searching'].includes(data.state)) {
           setStatus(activity ? data.agent.toUpperCase() + ' · ' + activity : data.agent.toUpperCase() + ' is ' + data.state, true);
         }
       } else if (data.kind === 'tool') {
         const card = document.createElement('article'); card.className = 'message ' + data.agent;
-        const label = document.createElement('strong'); label.textContent = data.agent + ' · webpage';
-        const body = document.createElement('pre'); body.textContent = data.url + '\n' + data.result;
+        const label = document.createElement('strong'); label.textContent = data.agent + (data.tool === 'search_web' ? ' · search' : ' · webpage');
+        const body = document.createElement('pre'); body.textContent = (data.query || data.url) + '\n' + data.result;
         card.append(label, body); messages.append(card); messages.scrollTop = messages.scrollHeight;
       } else if (data.kind === 'research_complete') {
-        metrics.textContent = `${data.agent} research · ${data.model_calls} model calls · ${data.webpage_requests} webpage requests · ${data.tokens.total_tokens} tokens`;
+        metrics.textContent = `${data.agent} research · ${data.model_calls} model calls · ${data.searches} searches · ${data.webpage_requests} webpage requests · ${data.tokens.total_tokens} tokens`;
       } else if (data.kind === 'delta') {
         if (data.phase !== 'conversation') {
           if (artifactView.dataset.phase !== data.phase) {
