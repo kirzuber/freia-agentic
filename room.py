@@ -146,6 +146,9 @@ async def session(request: Request):
             calls = 0
             research_calls = 0
             web_requests = 0
+            collaboration_searches = 0
+            collaboration_pages = 0
+            collaboration_extra_calls = 0
             start = perf_counter()
             process = None
 
@@ -171,6 +174,10 @@ async def session(request: Request):
                                 if item["kind"] == "research_complete":
                                     research_calls += item["tool_calls"]
                                     web_requests += item["webpage_requests"]
+                                else:
+                                    collaboration_searches = item.get("searches", 0)
+                                    collaboration_pages = item.get("webpage_requests", 0)
+                                    collaboration_extra_calls = item.get("extra_calls", 0)
                             if item["kind"] != "complete":
                                 yield event(**item)
                         await process.wait()
@@ -178,7 +185,10 @@ async def session(request: Request):
                             errors = (await process.stderr.read()).decode(errors="replace").strip().splitlines()
                             raise RuntimeError(f"{phase} failed: {errors[-1][:400] if errors else 'process exited'}")
                         process = None
-                yield event("complete", elapsed=round(perf_counter() - start, 2), model_calls=calls, tokens=totals, tool_calls=research_calls, webpage_requests=web_requests)
+                yield event("complete", elapsed=round(perf_counter() - start, 2), model_calls=calls, tokens=totals,
+                            tool_calls=research_calls, webpage_requests=web_requests,
+                            collaboration_searches=collaboration_searches, collaboration_pages=collaboration_pages,
+                            collaboration_extra_calls=collaboration_extra_calls)
             except (TimeoutError, RuntimeError) as exc:
                 available = [name for name in ("bob.md", "sol.md", "conversation.md", "joint-assessment.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html") if (folder / name).is_file()]
                 yield event("failed", message=str(exc), elapsed=round(perf_counter() - start, 2), available=available)

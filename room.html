@@ -191,7 +191,7 @@
     source.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.kind === 'state') {
-        const activity = {research: data.state === 'reading' ? 'Reading webpage' : data.state === 'searching' ? 'Searching web' : 'Researching', synthesis: 'Creating assessment', solution: 'Creating direction', diagram: 'Creating diagram', deck: 'Creating deck'}[data.phase];
+        const activity = data.state === 'reading' ? 'Reading webpage' : data.state === 'searching' ? 'Searching web' : {research: 'Researching', synthesis: 'Creating assessment', solution: 'Creating direction', diagram: 'Creating diagram', deck: 'Creating deck'}[data.phase];
         setAgentState(data.agent, data.state, activity && data.state !== 'waiting' ? activity : data.state);
         if (['thinking', 'speaking', 'reading', 'searching'].includes(data.state)) {
           setStatus(activity ? data.agent.toUpperCase() + ' · ' + activity : data.agent.toUpperCase() + ' is ' + data.state, true);
@@ -242,7 +242,7 @@
         setAgentState('sol', 'completed');
         setStatus('Session complete', false);
         for (const [button, download] of Object.values(artifactControls)) { button.disabled = false; download.hidden = false; }
-        metrics.textContent = `${data.elapsed}s · ${data.model_calls} model calls · ${data.tool_calls} tool calls · ${data.tokens.total_tokens} tokens`;
+        metrics.textContent = `${data.elapsed}s · ${data.model_calls} model calls · ${data.collaboration_searches} collaboration searches · ${data.collaboration_pages} collaboration pages · ${data.tokens.total_tokens} tokens`;
         viewArtifact('deck.md');
       } else if (data.kind === 'failed') {
         finished = true;
