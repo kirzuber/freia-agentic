@@ -34,6 +34,7 @@ class SessionState(TypedDict):
     model_calls: int
     tokens: dict[str, int]
     joint_assessment: str
+    editorial_brief: str
     solution_direction: str
     diagram_svg: str
     deck: str
@@ -60,19 +61,20 @@ def main() -> None:
     }
     if not mission or not all(initial.values()):
         parser.error("mission and both initial assessments must contain text")
-    configs = {name: yaml.safe_load((ROOT / "config" / f"{name}.yaml").read_text()) for name in ("bob", "sol")}
+    configs = {name: yaml.safe_load((ROOT / "config" / f"{name}.yaml").read_text()) for name in ("bob", "sol", "freia")}
     instructions = {name: (ROOT / configs[name]["instructions"]).read_text().strip() for name in configs}
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     conversation_path = output_dir / "conversation.md"
     joint_path = output_dir / "joint-assessment.md"
+    brief_path = output_dir / "editorial-brief.md"
     direction_path = output_dir / "solution-direction.md"
     diagram_path = output_dir / "solution-diagram.svg"
     deck_path = output_dir / "deck.md"
     presentation_path = output_dir / "deck.html"
     playbook_path = output_dir / "meeting-playbook.md"
     conversation_path.write_text("# Bob and Sol — conversation\n\n")
-    for path in (joint_path, direction_path, diagram_path, deck_path, presentation_path, playbook_path):
+    for path in (joint_path, brief_path, direction_path, diagram_path, deck_path, presentation_path, playbook_path):
         path.unlink(missing_ok=True)
 
     def emit(kind: str, **data) -> None:
@@ -272,12 +274,29 @@ def main() -> None:
         emit("state", agent="bob", state="waiting", phase="synthesis")
         return {"joint_assessment": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
 
-    def create_direction(state: SessionState) -> dict:
+    def coordinate(state: SessionState) -> dict:
         if not state["joint_assessment"]:
-            raise RuntimeError("solution direction requires the joint assessment")
+            raise RuntimeError("editorial brief requires the joint assessment")
+        emit("state", agent="freia", state="coordinating", phase="editorial")
+        response = stream_response(model_for("freia", configs["freia"]["max_tokens"]), [
+            SystemMessage(content=instructions["freia"] + "\n\nIn this local experiment, write only an internal editorial brief. The available final formats are an HTML discussion deck and Markdown meeting playbook. Do not request PowerPoint or Word output, new research, or changes to Bob and Sol's conclusions."),
+            HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nWrite a short Markdown editorial brief, at most 250 words. Summarize the agreed direction; identify unresolved uncertainties and disagreements; distinguish what belongs in the client-facing deck from what belongs in the private meeting playbook; and state evidence boundaries. Preserve Bob and Sol's independent judgments. Do not add new facts or tools."),
+        ], "freia", "editorial")
+        content = str(response.content).strip()
+        finish = response.response_metadata.get("finish_reason")
+        if not content or finish != "stop":
+            raise RuntimeError(f"editorial brief failed: finish_reason={finish}, content_chars={len(content)}")
+        brief_path.write_text(content + "\n")
+        emit("artifact", name="editorial-brief.md")
+        emit("state", agent="freia", state="watching", phase="solution")
+        return {"editorial_brief": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
+
+    def create_direction(state: SessionState) -> dict:
+        if not state["editorial_brief"]:
+            raise RuntimeError("solution direction requires FreIA's editorial brief")
         response = stream_response(model_for("sol", 1400), [
             SystemMessage(content=instructions["sol"] + "\n\nUse only the supplied assessments and conversation. No external tools or new research are available."),
-            HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nWrite solution-direction.md in at most 300 words. Propose one small, conditional solution direction with its discovery gate, a no-build alternative, key dependencies and risks. Keep unverified client systems and economics explicitly unknown. Cite supplied source URLs and label search-derived evidence. Return Markdown only."),
+            HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nFreIA's editorial brief (coordination context, not new evidence):\n" + state["editorial_brief"] + "\n\nWrite solution-direction.md in at most 300 words. Propose one small, conditional solution direction with its discovery gate, a no-build alternative, key dependencies and risks. Keep unverified client systems and economics explicitly unknown. Cite supplied source URLs and label search-derived evidence. Return Markdown only."),
         ], "sol", "solution")
         content = str(response.content).strip()
         finish = response.response_metadata.get("finish_reason")
@@ -318,9 +337,10 @@ def main() -> None:
     def create_deck(state: SessionState) -> dict:
         if not state["diagram_svg"]:
             raise RuntimeError("deck requires Sol's solution direction and diagram")
+        emit("state", agent="freia", state="preparing_deck", phase="deck")
         response = stream_response(model_for("bob", 2400), [
             SystemMessage(content=instructions["bob"] + "\n\nThe current user request authorizes a concise discussion deck. Use Sol's supplied solution direction as the technical basis; do not recreate it independently. No external tools or new research are available."),
-            HumanMessage(content=source_context + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nSol's solution direction:\n" + state["solution_direction"] + "\n\nWrite a client-facing discussion deck as exactly six Markdown slides, at most 450 words total, each headed '## Slide N — Title' with two to four concise bullets. Cover our understanding of the client's business and strategic direction; one or two credible business challenges explicitly labeled hypotheses and why they could matter; alternative approaches or Sol's conditional solution direction (the generated diagram will appear on an approach/direction slide); a practical way to explore or validate the opportunity together; and an appropriate next step. Write to support an executive conversation, not an internal research review. Use selective source URLs as attribution for material public facts. Put source-access failures, technical research details and internal uncertainty only in supporting artifacts. Clearly label material hypotheses. Do not invent client problems, facts, ROI, or commercial commitments."),
+            HumanMessage(content=source_context + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nFreIA's editorial brief (coordination context, not new evidence):\n" + state["editorial_brief"] + "\n\nSol's solution direction:\n" + state["solution_direction"] + "\n\nWrite a client-facing discussion deck as exactly six Markdown slides, at most 450 words total, each headed '## Slide N — Title' with two to four concise bullets. Cover our understanding of the client's business and strategic direction; one or two credible business challenges explicitly labeled hypotheses and why they could matter; alternative approaches or Sol's conditional solution direction (the generated diagram will appear on an approach/direction slide); a practical way to explore or validate the opportunity together; and an appropriate next step. Write to support an executive conversation, not an internal research review. Use selective source URLs as attribution for material public facts. Put source-access failures, technical research details and internal uncertainty only in supporting artifacts. Clearly label material hypotheses. Do not invent client problems, facts, ROI, or commercial commitments."),
         ], "bob", "deck")
         content = str(response.content).strip()
         finish = response.response_metadata.get("finish_reason")
@@ -336,9 +356,10 @@ def main() -> None:
     def create_playbook(state: SessionState) -> dict:
         if not state["deck"]:
             raise RuntimeError("meeting playbook requires Bob's deck")
+        emit("state", agent="freia", state="preparing_narrative", phase="playbook")
         response = stream_response(model_for("bob", 2200), [
             SystemMessage(content=instructions["bob"] + "\n\nWrite a private guide for the human consultant using Sol's supplied solution direction and the actual deck. No external tools or new research are available. Do not invent consultant credentials or client facts."),
-            HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nSol's solution direction:\n" + state["solution_direction"] + "\n\nClient discussion deck:\n" + state["deck"] + "\n\nWrite meeting-playbook.md as a concise, practical Markdown conversation guide intended only for the human consultant, at most 650 words. Include: meeting objective and desired outcome; a suggested conversational opening; narrative and transitions tied to the deck; critical discovery questions with why each matters; plausible client responses and how to adapt; objections, risks and sensitive topics; relevant consultant experience that can credibly be emphasized using only supplied context (if none was supplied, say so and do not invent any); and a suggested closing with a specific next-step request. Distinguish known facts from hypotheses. Keep it natural, not a word-for-word sales script. Keep research caveats and source access issues here rather than in the client deck."),
+            HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nFreIA's editorial brief (coordination context, not new evidence):\n" + state["editorial_brief"] + "\n\nSol's solution direction:\n" + state["solution_direction"] + "\n\nClient discussion deck:\n" + state["deck"] + "\n\nWrite meeting-playbook.md as a concise, practical Markdown conversation guide intended only for the human consultant, at most 650 words. Include: meeting objective and desired outcome; a suggested conversational opening; narrative and transitions tied to the deck; critical discovery questions with why each matters; plausible client responses and how to adapt; objections, risks and sensitive topics; relevant consultant experience that can credibly be emphasized using only supplied context (if none was supplied, say so and do not invent any); and a suggested closing with a specific next-step request. Distinguish known facts from hypotheses. Keep it natural, not a word-for-word sales script. Keep research caveats and source access issues here rather than in the client deck."),
         ], "bob", "playbook")
         content = str(response.content).strip()
         finish = response.response_metadata.get("finish_reason")
@@ -357,6 +378,7 @@ def main() -> None:
     graph.add_node("bob_third", lambda state: take_turn(state, "bob"))
     graph.add_node("sol_third", lambda state: take_turn(state, "sol"))
     graph.add_node("synthesis", synthesize)
+    graph.add_node("editorial", coordinate)
     graph.add_node("solution", create_direction)
     graph.add_node("diagram", create_diagram)
     graph.add_node("deck", create_deck)
@@ -368,7 +390,8 @@ def main() -> None:
     graph.add_edge("sol_second", "bob_third")
     graph.add_edge("bob_third", "sol_third")
     graph.add_edge("sol_third", "synthesis")
-    graph.add_edge("synthesis", "solution")
+    graph.add_edge("synthesis", "editorial")
+    graph.add_edge("editorial", "solution")
     graph.add_edge("solution", "diagram")
     graph.add_edge("diagram", "deck")
     graph.add_edge("deck", "playbook")
@@ -380,6 +403,7 @@ def main() -> None:
     signal.signal(signal.SIGALRM, on_deadline)
     signal.setitimer(signal.ITIMER_REAL, DEADLINE_SECONDS)
     try:
+        emit("state", agent="freia", state="watching", phase="conversation")
         result = graph.compile().invoke({
             "conversation": [],
             "research_log": [],
@@ -387,21 +411,27 @@ def main() -> None:
             "model_calls": 0,
             "tokens": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
             "joint_assessment": "",
+            "editorial_brief": "",
             "solution_direction": "",
             "diagram_svg": "",
             "deck": "",
             "playbook": "",
-        }, config={"recursion_limit": 14})
+        }, config={"recursion_limit": 15})
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
 
+    emit("state", agent="freia", state="finalizing_deliverables", phase="finalize")
+    if not all(path.is_file() and path.stat().st_size for path in (joint_path, brief_path, direction_path, diagram_path, deck_path, presentation_path, playbook_path)):
+        raise RuntimeError("final deliverables are incomplete")
+    emit("state", agent="freia", state="completed", phase="complete")
     print("Completion: complete")
     print(f"Elapsed: {perf_counter() - start:.2f}s")
-    print(f"Model calls: {result['model_calls']} (6 conversation, {result['extra_calls']} research follow-ups, 1 synthesis, 4 artifact)")
+    print(f"Model calls: {result['model_calls']} (6 conversation, {result['extra_calls']} research follow-ups, 1 synthesis, 1 editorial, 4 artifact)")
     print(f"Collaboration research: {research_counts['searches']} searches; {research_counts['webpage_requests']} webpage requests")
     print("Tokens: " + " ".join(f"{key}={value}" for key, value in result["tokens"].items()))
     print(f"Conversation: {conversation_path}")
     print(f"Joint assessment: {joint_path}")
+    print(f"Editorial brief: {brief_path}")
     print(f"Solution direction: {direction_path}")
     print(f"Solution diagram: {diagram_path}")
     print(f"Deck: {deck_path}")

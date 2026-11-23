@@ -140,7 +140,7 @@ async def prepare_mission(data: dict, question: str = "", answer: str = "") -> d
 
 @app.get("/artifacts/{name}")
 def artifact(name: str):
-    if name not in {"bob.md", "sol.md", "conversation.md", "joint-assessment.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html", "meeting-playbook.md"}:
+    if name not in {"bob.md", "sol.md", "conversation.md", "joint-assessment.md", "editorial-brief.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html", "meeting-playbook.md"}:
         raise HTTPException(status_code=404)
     path = Path(active_temp.name) / name if active_temp else None
     if path is None or not path.is_file():
@@ -193,6 +193,7 @@ async def session(request: Request):
                 return "data: " + json.dumps({"kind": kind, **fields}) + "\n\n"
 
             try:
+                yield event("state", agent="freia", state="watching", phase="session")
                 async with asyncio.timeout(360):
                     for phase, command in (
                         ("bob research", [sys.executable, "-u", str(ROOT / "run.py"), "bob", str(mission_path), "--output-dir", str(folder), "--events"]),
@@ -227,7 +228,7 @@ async def session(request: Request):
                             collaboration_searches=collaboration_searches, collaboration_pages=collaboration_pages,
                             collaboration_extra_calls=collaboration_extra_calls)
             except (TimeoutError, RuntimeError) as exc:
-                available = [name for name in ("bob.md", "sol.md", "conversation.md", "joint-assessment.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html", "meeting-playbook.md") if (folder / name).is_file()]
+                available = [name for name in ("bob.md", "sol.md", "conversation.md", "joint-assessment.md", "editorial-brief.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html", "meeting-playbook.md") if (folder / name).is_file()]
                 yield event("failed", message=str(exc), elapsed=round(perf_counter() - start, 2), available=available)
             finally:
                 if process and process.returncode is None:
