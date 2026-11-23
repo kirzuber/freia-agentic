@@ -6,3 +6,4 @@ langgraph
 fastapi
 uvicorn
 tavily-python
+python-pptx

@@ -140,12 +140,12 @@ async def prepare_mission(data: dict, question: str = "", answer: str = "") -> d
 
 @app.get("/artifacts/{name}")
 def artifact(name: str):
-    if name not in {"bob.md", "sol.md", "conversation.md", "joint-assessment.md", "editorial-brief.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html", "meeting-playbook.md"}:
+    if name not in {"bob.md", "sol.md", "conversation.md", "joint-assessment.md", "editorial-brief.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html", "discussion-deck.pptx", "meeting-playbook.md"}:
         raise HTTPException(status_code=404)
     path = Path(active_temp.name) / name if active_temp else None
     if path is None or not path.is_file():
         raise HTTPException(status_code=404)
-    media_type = "image/svg+xml" if name.endswith(".svg") else "text/html" if name.endswith(".html") else "text/markdown"
+    media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation" if name.endswith(".pptx") else "image/svg+xml" if name.endswith(".svg") else "text/html" if name.endswith(".html") else "text/markdown"
     return FileResponse(path, media_type=media_type)
 
 
@@ -188,6 +188,7 @@ async def session(request: Request):
             collaboration_extra_calls = 0
             start = perf_counter()
             process = None
+            last_stage = "starting"
 
             def event(kind, **fields):
                 return "data: " + json.dumps({"kind": kind, **fields}) + "\n\n"
@@ -200,11 +201,13 @@ async def session(request: Request):
                         ("sol research", [sys.executable, "-u", str(ROOT / "run.py"), "sol", str(mission_path), "--output-dir", str(folder), "--events"]),
                         ("collaboration", [sys.executable, "-u", str(ROOT / "collaborate.py"), str(mission_path), str(folder / "bob.md"), str(folder / "sol.md"), "--output-dir", str(folder), "--events"]),
                     ):
+                        last_stage = phase
                         process = await asyncio.create_subprocess_exec(*command, cwd=ROOT, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                         async for line in process.stdout:
                             if not line.startswith(b"FREIA_EVENT "):
                                 continue
                             item = json.loads(line[len(b"FREIA_EVENT "):])
+                            last_stage = item.get("phase") or last_stage
                             if item["kind"] in ("research_complete", "complete"):
                                 calls += item["model_calls"]
                                 for key in totals:
@@ -221,15 +224,18 @@ async def session(request: Request):
                         await process.wait()
                         if process.returncode:
                             errors = (await process.stderr.read()).decode(errors="replace").strip().splitlines()
-                            raise RuntimeError(f"{phase} failed: {errors[-1][:400] if errors else 'process exited'}")
+                            detail = next((line for line in reversed(errors) if re.match(r"^[\w.]+(?:Error|Exception):", line)),
+                                          errors[-1] if errors else "process exited")
+                            raise RuntimeError(detail[:200])
                         process = None
                 yield event("complete", elapsed=round(perf_counter() - start, 2), model_calls=calls, tokens=totals,
                             tool_calls=research_calls, webpage_requests=web_requests,
                             collaboration_searches=collaboration_searches, collaboration_pages=collaboration_pages,
                             collaboration_extra_calls=collaboration_extra_calls)
             except (TimeoutError, RuntimeError) as exc:
-                available = [name for name in ("bob.md", "sol.md", "conversation.md", "joint-assessment.md", "editorial-brief.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html", "meeting-playbook.md") if (folder / name).is_file()]
-                yield event("failed", message=str(exc), elapsed=round(perf_counter() - start, 2), available=available)
+                available = [name for name in ("bob.md", "sol.md", "conversation.md", "joint-assessment.md", "editorial-brief.md", "solution-direction.md", "solution-diagram.svg", "deck.md", "deck.html", "discussion-deck.pptx", "meeting-playbook.md") if (folder / name).is_file()]
+                yield event("failed", stage=last_stage, message=str(exc) or "overall session deadline reached",
+                            elapsed=round(perf_counter() - start, 2), available=available)
             finally:
                 if process and process.returncode is None:
                     process.kill()

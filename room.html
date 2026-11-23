@@ -32,10 +32,13 @@
     .agent.sol.thinking, .agent.sol.reading, .agent.sol.searching, .agent.sol.speaking { border-color: #ffc47b; }
     .agent.speaking { box-shadow: 0 0 20px #ffffff18; }
     .agent.completed { border-color: #597e73; }
+    .agent.failed { border-color: #e1717b; }
+    .agent.stopped { border-color: #45506a; }
     .agent-state { display: inline-block; margin-top: 9px; color: #8290a8; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
     .agent.thinking .agent-state { color: #d7e3f1; }
     .agent.speaking .agent-state { color: #d7f770; }
     .agent.completed .agent-state { color: #92d9ad; }
+    .agent.failed .agent-state { color: #f29aa2; }
     .avatar { flex: none; width: 58px; height: 58px; display: grid; place-items: center; border-radius: 16px; font-size: 28px; font-weight: 800; }
     .bob .avatar { color: #74f0dc; background: #123c43; }
     .sol .avatar { color: #ffd19a; background: #51331e; }
@@ -101,10 +104,11 @@
     <section class="panel"><div class="panel-head"><h3>Live conversation</h3><small id="count">0 / 6 messages</small></div><div id="messages"><div class="empty">Start a session to see Bob and Sol exchange their views.</div></div></section>
     <section class="panel"><div class="panel-head"><h3>Deliverables</h3><small>Local files</small></div><div class="side-body">
       <div class="deliverables">
-        <div class="artifact-row"><button class="artifact" id="view-presentation" disabled>Client Discussion Deck · View HTML <span>↗</span></button><a class="download" id="download-presentation" href="/artifacts/deck.html" download="deck.html" title="Download Client Discussion Deck HTML" hidden>↓</a></div>
+        <div class="artifact-row"><button class="artifact" id="view-powerpoint" disabled>Client Discussion Deck · PowerPoint · Review draft <span>↓</span></button><a class="download" id="download-powerpoint" href="/artifacts/discussion-deck.pptx" download="discussion-deck.pptx" title="Download editable PowerPoint" hidden>↓</a></div>
         <div class="artifact-row"><button class="artifact" id="view-playbook" disabled>Meeting Playbook · View Markdown <span>↗</span></button><a class="download" id="download-playbook" href="/artifacts/meeting-playbook.md" download="meeting-playbook.md" title="Download Meeting Playbook Markdown" hidden>↓</a></div>
       </div>
       <div class="artifact-group-title">Supporting Artifacts</div>
+      <div class="artifact-row"><button class="artifact" id="view-presentation" disabled>Discussion deck · HTML preview <span>↗</span></button><a class="download" id="download-presentation" href="/artifacts/deck.html" download="deck.html" title="Download HTML preview" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-bob" disabled>Bob research <span>↗</span></button><a class="download" id="download-bob" href="/artifacts/bob.md" download="bob.md" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-sol" disabled>Sol research <span>↗</span></button><a class="download" id="download-sol" href="/artifacts/sol.md" download="sol.md" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-conversation" disabled>Conversation transcript <span>↗</span></button><a class="download" id="download-conversation" href="/artifacts/conversation.md" download="conversation.md" hidden>↓</a></div>
@@ -141,6 +145,7 @@
   const diagramButton = document.getElementById('view-diagram');
   const deckButton = document.getElementById('view-deck');
   const presentationButton = document.getElementById('view-presentation');
+  const powerpointButton = document.getElementById('view-powerpoint');
   const playbookButton = document.getElementById('view-playbook');
   const artifactControls = {
     'bob.md': [document.getElementById('view-bob'), document.getElementById('download-bob')],
@@ -152,6 +157,7 @@
     'solution-diagram.svg': [diagramButton, document.getElementById('download-diagram')],
     'deck.md': [deckButton, document.getElementById('download-deck')],
     'deck.html': [presentationButton, document.getElementById('download-presentation')],
+    'discussion-deck.pptx': [powerpointButton, document.getElementById('download-powerpoint')],
     'meeting-playbook.md': [playbookButton, document.getElementById('download-playbook')]
   };
   let source;
@@ -162,7 +168,7 @@
   function setStatus(text, live) { status.textContent = text; status.classList.toggle('live', live); }
   function setAgentState(agent, state, label = state) {
     const card = document.getElementById(agent);
-    card.classList.remove('thinking', 'reading', 'searching', 'speaking', 'waiting', 'coordinating', 'preparing_deck', 'preparing_narrative', 'finalizing_deliverables', 'watching', 'completed');
+    card.classList.remove('thinking', 'reading', 'searching', 'speaking', 'waiting', 'coordinating', 'preparing_deck', 'preparing_narrative', 'finalizing_deliverables', 'watching', 'completed', 'failed', 'stopped');
     card.classList.add(state);
     document.getElementById(agent + '-state').textContent = label;
   }
@@ -194,6 +200,7 @@
   diagramButton.onclick = () => viewArtifact('solution-diagram.svg');
   deckButton.onclick = () => viewArtifact('deck.md');
   presentationButton.onclick = () => window.open('/artifacts/deck.html', '_blank', 'noopener');
+  powerpointButton.onclick = () => document.getElementById('download-powerpoint').click();
   playbookButton.onclick = () => viewArtifact('meeting-playbook.md');
   start.onclick = () => {
     finished = false;
@@ -270,7 +277,7 @@
         conversationButton.disabled = false;
       } else if (data.kind === 'artifact') {
         const controls = artifactControls[data.name];
-        if (controls) { controls[0].disabled = false; controls[1].hidden = false; if (data.name !== 'deck.html') viewArtifact(data.name); }
+        if (controls) { controls[0].disabled = false; controls[1].hidden = false; if (data.name !== 'deck.html' && data.name !== 'discussion-deck.pptx') viewArtifact(data.name); }
       } else if (data.kind === 'complete') {
         finished = true;
         source.close();
@@ -286,17 +293,21 @@
         finished = true;
         source.close();
         start.disabled = false;
-        setAgentState('bob', 'waiting');
-        setAgentState('sol', 'waiting');
-        setAgentState('freia', 'waiting');
-        setStatus('Session failed', false);
-        metrics.textContent = `${data.message} · ${data.available.length} partial artifacts available`;
+        const owner = {solution:'sol', diagram:'sol', deck:'bob', playbook:'bob', synthesis:'bob', editorial:'freia'}[data.stage]
+          || (data.stage?.startsWith('bob') ? 'bob' : data.stage?.startsWith('sol') ? 'sol' : null);
+        for (const agent of ['bob', 'sol', 'freia']) setAgentState(agent, agent === owner ? 'failed' : 'stopped', agent === owner ? 'Failed' : 'Stopped');
+        for (const name of data.available || []) {
+          const controls = artifactControls[name];
+          if (controls) { controls[0].disabled = false; controls[1].hidden = false; }
+        }
+        setStatus('Session failed · ' + (data.stage || 'unknown stage'), false);
+        metrics.textContent = `${data.stage || 'Session'}: ${data.message} · ${data.available.length} partial artifacts available`;
       }
     };
     source.onerror = (error) => {
       if (!finished) {
         finished = true; source.close(); start.disabled = false;
-        setAgentState('bob', 'waiting'); setAgentState('sol', 'waiting'); setAgentState('freia', 'waiting');
+        setAgentState('bob', 'stopped', 'Stopped'); setAgentState('sol', 'stopped', 'Stopped'); setAgentState('freia', 'stopped', 'Stopped');
         setStatus('Connection ended', false);
         metrics.textContent = error?.message || 'Connection ended before completion.';
       }

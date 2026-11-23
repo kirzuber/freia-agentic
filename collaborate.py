@@ -20,11 +20,28 @@ from langchain_deepseek import ChatDeepSeek
 from langgraph.graph import END, START, StateGraph
 from tavily import TavilyClient
 from presentation import render_deck_html
+from powerpoint import render_deck_pptx
 from run import public_url
 
 
 ROOT = Path(__file__).resolve().parent
 DEADLINE_SECONDS = 160
+
+
+def remove_svg_arrow_markers(svg: str) -> str:
+    """Keep Sol's diagram while dropping marker markup unsupported by the viewer."""
+    root = ET.fromstring(svg)
+    for element in list(root.iter()):
+        for child in list(element):
+            if child.tag.rsplit("}", 1)[-1] == "defs" and all(
+                part.tag.rsplit("}", 1)[-1] == "marker" for part in child
+            ):
+                element.remove(child)
+        for attribute in list(element.attrib):
+            if attribute.rsplit("}", 1)[-1].startswith("marker-"):
+                del element.attrib[attribute]
+    ET.register_namespace("", "http://www.w3.org/2000/svg")
+    return ET.tostring(root, encoding="unicode")
 
 
 class SessionState(TypedDict):
@@ -72,9 +89,10 @@ def main() -> None:
     diagram_path = output_dir / "solution-diagram.svg"
     deck_path = output_dir / "deck.md"
     presentation_path = output_dir / "deck.html"
+    powerpoint_path = output_dir / "discussion-deck.pptx"
     playbook_path = output_dir / "meeting-playbook.md"
     conversation_path.write_text("# Bob and Sol — conversation\n\n")
-    for path in (joint_path, brief_path, direction_path, diagram_path, deck_path, presentation_path, playbook_path):
+    for path in (joint_path, brief_path, direction_path, diagram_path, deck_path, presentation_path, powerpoint_path, playbook_path):
         path.unlink(missing_ok=True)
 
     def emit(kind: str, **data) -> None:
@@ -321,7 +339,7 @@ def main() -> None:
             raise RuntimeError("diagram requires Sol's solution direction")
         response = stream_response(model_for("sol", 2000), [
             SystemMessage(content=instructions["sol"] + "\n\nCreate a simple, safe SVG diagram of your own solution direction. No external tools are available."),
-            HumanMessage(content="Your solution direction:\n" + state["solution_direction"] + "\n\nReturn only a compact standalone SVG, under 2000 characters, beginning with <svg and ending with </svg>. Use a 720x240 viewBox, one dark background rect, exactly three short labeled boxes, and two connecting lines. Choose box labels from your direction and mark conditional steps as conditional. No title, notes, scripts, links, images, CSS, external resources, or invented client systems."),
+            HumanMessage(content="Your solution direction:\n" + state["solution_direction"] + "\n\nReturn only a compact standalone SVG, under 2000 characters, beginning with <svg and ending with </svg>. Use a 720x240 viewBox and a simple visual relevant to this specific business problem. Use short labels from your direction and mark conditional steps as conditional. No title, notes, scripts, links, images, CSS, external resources, or invented client systems."),
         ], "sol", "diagram")
         svg = str(response.content).strip()
         finish = response.response_metadata.get("finish_reason")
@@ -329,6 +347,7 @@ def main() -> None:
             svg = svg.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         if not svg or finish != "stop":
             raise RuntimeError(f"diagram failed: finish_reason={finish}, content_chars={len(svg)}")
+        svg = remove_svg_arrow_markers(svg)
         root = ET.fromstring(svg)
         allowed = {"svg", "g", "rect", "line", "path", "circle", "ellipse", "polyline", "polygon", "text", "tspan"}
         for element in root.iter():
@@ -359,6 +378,8 @@ def main() -> None:
         emit("artifact", name="deck.md")
         presentation_path.write_text(render_deck_html(content, state["diagram_svg"]))
         emit("artifact", name="deck.html")
+        render_deck_pptx(content, state["solution_direction"], mission, powerpoint_path)
+        emit("artifact", name="discussion-deck.pptx")
         emit("state", agent="bob", state="waiting", phase="deck")
         return {"deck": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
 
