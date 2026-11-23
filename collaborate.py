@@ -37,6 +37,7 @@ class SessionState(TypedDict):
     solution_direction: str
     diagram_svg: str
     deck: str
+    playbook: str
 
 
 def main() -> None:
@@ -69,8 +70,9 @@ def main() -> None:
     diagram_path = output_dir / "solution-diagram.svg"
     deck_path = output_dir / "deck.md"
     presentation_path = output_dir / "deck.html"
+    playbook_path = output_dir / "meeting-playbook.md"
     conversation_path.write_text("# Bob and Sol — conversation\n\n")
-    for path in (joint_path, direction_path, diagram_path, deck_path, presentation_path):
+    for path in (joint_path, direction_path, diagram_path, deck_path, presentation_path, playbook_path):
         path.unlink(missing_ok=True)
 
     def emit(kind: str, **data) -> None:
@@ -316,7 +318,7 @@ def main() -> None:
             raise RuntimeError("deck requires Sol's solution direction and diagram")
         response = stream_response(model_for("bob", 2400), [
             SystemMessage(content=instructions["bob"] + "\n\nThe current user request authorizes a concise discussion deck. Use Sol's supplied solution direction as the technical basis; do not recreate it independently. No external tools or new research are available."),
-            HumanMessage(content=source_context + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nSol's solution direction:\n" + state["solution_direction"] + "\n\nWrite deck.md as exactly six Markdown slides, at most 450 words total, each headed '## Slide N — Title' with two to four concise bullets. This is an executive discussion deck for a prospective client, not a sales claim. Include source/access caveats, opportunity hypothesis, Sol's conditional direction and no-build alternative, discovery questions, and a decision gate. Cite supplied source URLs and label search-derived evidence. Do not claim client pain, systems, budget, or ROI as facts."),
+            HumanMessage(content=source_context + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nSol's solution direction:\n" + state["solution_direction"] + "\n\nWrite a client-facing discussion deck as exactly six Markdown slides, at most 450 words total, each headed '## Slide N — Title' with two to four concise bullets. Cover our understanding of the client's business and strategic direction; one or two credible business challenges explicitly labeled hypotheses and why they could matter; alternative approaches or Sol's conditional solution direction (the generated diagram will appear on an approach/direction slide); a practical way to explore or validate the opportunity together; and an appropriate next step. Write to support an executive conversation, not an internal research review. Use selective source URLs as attribution for material public facts. Put source-access failures, technical research details and internal uncertainty only in supporting artifacts. Clearly label material hypotheses. Do not invent client problems, facts, ROI, or commercial commitments."),
         ], "bob", "deck")
         content = str(response.content).strip()
         finish = response.response_metadata.get("finish_reason")
@@ -329,6 +331,22 @@ def main() -> None:
         emit("state", agent="bob", state="waiting", phase="deck")
         return {"deck": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
 
+    def create_playbook(state: SessionState) -> dict:
+        if not state["deck"]:
+            raise RuntimeError("meeting playbook requires Bob's deck")
+        response = stream_response(model_for("bob", 2200), [
+            SystemMessage(content=instructions["bob"] + "\n\nWrite a private guide for the human consultant using Sol's supplied solution direction and the actual deck. No external tools or new research are available. Do not invent consultant credentials or client facts."),
+            HumanMessage(content=source_context + "\n\nConversation:\n" + transcript(state) + "\n\nJoint assessment:\n" + state["joint_assessment"] + "\n\nSol's solution direction:\n" + state["solution_direction"] + "\n\nClient discussion deck:\n" + state["deck"] + "\n\nWrite meeting-playbook.md as a concise, practical Markdown conversation guide intended only for the human consultant, at most 650 words. Include: meeting objective and desired outcome; a suggested conversational opening; narrative and transitions tied to the deck; critical discovery questions with why each matters; plausible client responses and how to adapt; objections, risks and sensitive topics; relevant consultant experience that can credibly be emphasized using only supplied context (if none was supplied, say so and do not invent any); and a suggested closing with a specific next-step request. Distinguish known facts from hypotheses. Keep it natural, not a word-for-word sales script. Keep research caveats and source access issues here rather than in the client deck."),
+        ], "bob", "playbook")
+        content = str(response.content).strip()
+        finish = response.response_metadata.get("finish_reason")
+        if not content or finish != "stop":
+            raise RuntimeError(f"playbook failed: finish_reason={finish}, content_chars={len(content)}")
+        playbook_path.write_text(content + "\n")
+        emit("artifact", name="meeting-playbook.md")
+        emit("state", agent="bob", state="waiting", phase="playbook")
+        return {"playbook": content, "model_calls": state["model_calls"] + 1, "tokens": count_tokens(state, response)}
+
     graph = StateGraph(SessionState)
     graph.add_node("bob_first", lambda state: take_turn(state, "bob"))
     graph.add_node("sol_first", lambda state: take_turn(state, "sol"))
@@ -338,6 +356,7 @@ def main() -> None:
     graph.add_node("solution", create_direction)
     graph.add_node("diagram", create_diagram)
     graph.add_node("deck", create_deck)
+    graph.add_node("playbook", create_playbook)
     graph.add_edge(START, "bob_first")
     graph.add_edge("bob_first", "sol_first")
     graph.add_edge("sol_first", "bob_second")
@@ -346,7 +365,8 @@ def main() -> None:
     graph.add_edge("synthesis", "solution")
     graph.add_edge("solution", "diagram")
     graph.add_edge("diagram", "deck")
-    graph.add_edge("deck", END)
+    graph.add_edge("deck", "playbook")
+    graph.add_edge("playbook", END)
 
     def on_deadline(_signum, _frame):
         raise TimeoutError("two-minute collaboration deadline reached")
@@ -364,13 +384,14 @@ def main() -> None:
             "solution_direction": "",
             "diagram_svg": "",
             "deck": "",
+            "playbook": "",
         }, config={"recursion_limit": 12})
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
 
     print("Completion: complete")
     print(f"Elapsed: {perf_counter() - start:.2f}s")
-    print(f"Model calls: {result['model_calls']} (4 conversation, {result['extra_calls']} research follow-ups, 1 synthesis, 3 artifact)")
+    print(f"Model calls: {result['model_calls']} (4 conversation, {result['extra_calls']} research follow-ups, 1 synthesis, 4 artifact)")
     print(f"Collaboration research: {research_counts['searches']} searches; {research_counts['webpage_requests']} webpage requests")
     print("Tokens: " + " ".join(f"{key}={value}" for key, value in result["tokens"].items()))
     print(f"Conversation: {conversation_path}")
@@ -379,6 +400,7 @@ def main() -> None:
     print(f"Solution diagram: {diagram_path}")
     print(f"Deck: {deck_path}")
     print(f"HTML presentation: {presentation_path}")
+    print(f"Meeting playbook: {playbook_path}")
     emit("complete", elapsed=round(perf_counter() - start, 2), model_calls=result["model_calls"], tokens=result["tokens"],
          searches=research_counts["searches"], webpage_requests=research_counts["webpage_requests"], extra_calls=result["extra_calls"])
 

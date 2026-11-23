@@ -64,6 +64,9 @@
     .artifact:disabled { opacity: .45; cursor: default; }
     .artifact-row { display: flex; gap: 8px; }
     .artifact-row .artifact { flex: 1; }
+    .deliverables { margin-bottom: 22px; }
+    .deliverables .artifact { background: #243746; border-color: #53877b; color: #f1fff8; font-size: 14px; font-weight: 700; min-height: 54px; }
+    .artifact-group-title { margin: 6px 0 13px; color: #91a3bb; font-size: 11px; text-transform: uppercase; letter-spacing: .15em; }
     .download { height: 43px; width: 38px; flex: none; display: grid; place-items: center; border: 1px solid #344158; border-radius: 10px; background: #1a2536; color: #d7f770; text-decoration: none; font-size: 17px; }
     [hidden] { display: none !important; }
     #artifact-view { margin: 16px 0 0; max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.55 ui-monospace, monospace; color: #aebbd0; }
@@ -86,7 +89,12 @@
   <section class="mission-panel"><h3>Approved mission · this visit only</h3><pre id="mission-view"></pre></section>
   <div class="columns">
     <section class="panel"><div class="panel-head"><h3>Live conversation</h3><small id="count">0 / 4 messages</small></div><div id="messages"><div class="empty">Start a session to see Bob and Sol exchange their views.</div></div></section>
-    <section class="panel"><div class="panel-head"><h3>Session artifacts</h3><small>Local files</small></div><div class="side-body">
+    <section class="panel"><div class="panel-head"><h3>Deliverables</h3><small>Local files</small></div><div class="side-body">
+      <div class="deliverables">
+        <div class="artifact-row"><button class="artifact" id="view-presentation" disabled>Client Discussion Deck · View HTML <span>↗</span></button><a class="download" id="download-presentation" href="/artifacts/deck.html" download="deck.html" title="Download Client Discussion Deck HTML" hidden>↓</a></div>
+        <div class="artifact-row"><button class="artifact" id="view-playbook" disabled>Meeting Playbook · View Markdown <span>↗</span></button><a class="download" id="download-playbook" href="/artifacts/meeting-playbook.md" download="meeting-playbook.md" title="Download Meeting Playbook Markdown" hidden>↓</a></div>
+      </div>
+      <div class="artifact-group-title">Supporting Artifacts</div>
       <div class="artifact-row"><button class="artifact" id="view-bob" disabled>Bob research <span>↗</span></button><a class="download" id="download-bob" href="/artifacts/bob.md" download="bob.md" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-sol" disabled>Sol research <span>↗</span></button><a class="download" id="download-sol" href="/artifacts/sol.md" download="sol.md" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-conversation" disabled>Conversation transcript <span>↗</span></button><a class="download" id="download-conversation" href="/artifacts/conversation.md" download="conversation.md" hidden>↓</a></div>
@@ -94,9 +102,8 @@
       <div class="artifact-row"><button class="artifact" id="view-direction" disabled>Solution direction <span>↗</span></button><a class="download" id="download-direction" href="/artifacts/solution-direction.md" download="solution-direction.md" title="Download solution direction" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-diagram" disabled>Solution diagram <span>↗</span></button><a class="download" id="download-diagram" href="/artifacts/solution-diagram.svg" download="solution-diagram.svg" title="Download solution diagram" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-deck" disabled>Discussion deck <span>↗</span></button><a class="download" id="download-deck" href="/artifacts/deck.md" download="deck.md" title="Download discussion deck" hidden>↓</a></div>
-      <div class="artifact-row"><button class="artifact" id="view-presentation" disabled>HTML presentation <span>↗</span></button><a class="download" id="download-presentation" href="/artifacts/deck.html" download="deck.html" title="Download HTML presentation" hidden>↓</a></div>
       <pre id="artifact-view">Artifacts will appear here after the session begins.</pre><img id="diagram-view" alt="Sol's solution direction diagram" hidden>
-      <div class="metric" id="metrics">Ready. Four conversation turns, one assessment, three artifact calls.</div>
+      <div class="metric" id="metrics">Ready. Four conversation turns, one assessment, four artifact calls.</div>
     </div></section>
   </div>
 </div>
@@ -122,6 +129,7 @@
   const diagramButton = document.getElementById('view-diagram');
   const deckButton = document.getElementById('view-deck');
   const presentationButton = document.getElementById('view-presentation');
+  const playbookButton = document.getElementById('view-playbook');
   const artifactControls = {
     'bob.md': [document.getElementById('view-bob'), document.getElementById('download-bob')],
     'sol.md': [document.getElementById('view-sol'), document.getElementById('download-sol')],
@@ -130,7 +138,8 @@
     'solution-direction.md': [directionButton, document.getElementById('download-direction')],
     'solution-diagram.svg': [diagramButton, document.getElementById('download-diagram')],
     'deck.md': [deckButton, document.getElementById('download-deck')],
-    'deck.html': [presentationButton, document.getElementById('download-presentation')]
+    'deck.html': [presentationButton, document.getElementById('download-presentation')],
+    'meeting-playbook.md': [playbookButton, document.getElementById('download-playbook')]
   };
   let source;
   let finished = false;
@@ -170,6 +179,7 @@
   diagramButton.onclick = () => viewArtifact('solution-diagram.svg');
   deckButton.onclick = () => viewArtifact('deck.md');
   presentationButton.onclick = () => window.open('/artifacts/deck.html', '_blank', 'noopener');
+  playbookButton.onclick = () => viewArtifact('meeting-playbook.md');
   start.onclick = () => {
     finished = false;
     start.disabled = true;
@@ -191,7 +201,7 @@
     source.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.kind === 'state') {
-        const activity = data.state === 'reading' ? 'Reading webpage' : data.state === 'searching' ? 'Searching web' : {research: 'Researching', synthesis: 'Creating assessment', solution: 'Creating direction', diagram: 'Creating diagram', deck: 'Creating deck'}[data.phase];
+        const activity = data.state === 'reading' ? 'Reading webpage' : data.state === 'searching' ? 'Searching web' : {research: 'Researching', synthesis: 'Creating assessment', solution: 'Creating direction', diagram: 'Creating diagram', deck: 'Creating deck', playbook: 'Creating playbook'}[data.phase];
         setAgentState(data.agent, data.state, activity && data.state !== 'waiting' ? activity : data.state);
         if (['thinking', 'speaking', 'reading', 'searching'].includes(data.state)) {
           setStatus(activity ? data.agent.toUpperCase() + ' · ' + activity : data.agent.toUpperCase() + ' is ' + data.state, true);
@@ -243,7 +253,7 @@
         setStatus('Session complete', false);
         for (const [button, download] of Object.values(artifactControls)) { button.disabled = false; download.hidden = false; }
         metrics.textContent = `${data.elapsed}s · ${data.model_calls} model calls · ${data.collaboration_searches} collaboration searches · ${data.collaboration_pages} collaboration pages · ${data.tokens.total_tokens} tokens`;
-        viewArtifact('deck.md');
+        viewArtifact('meeting-playbook.md');
       } else if (data.kind === 'failed') {
         finished = true;
         source.close();
