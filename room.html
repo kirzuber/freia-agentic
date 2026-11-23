@@ -88,7 +88,7 @@
   </div>
   <section class="mission-panel"><h3>Approved mission · this visit only</h3><pre id="mission-view"></pre></section>
   <div class="columns">
-    <section class="panel"><div class="panel-head"><h3>Live conversation</h3><small id="count">0 / 4 messages</small></div><div id="messages"><div class="empty">Start a session to see Bob and Sol exchange their views.</div></div></section>
+    <section class="panel"><div class="panel-head"><h3>Live conversation</h3><small id="count">0 / 6 messages</small></div><div id="messages"><div class="empty">Start a session to see Bob and Sol exchange their views.</div></div></section>
     <section class="panel"><div class="panel-head"><h3>Deliverables</h3><small>Local files</small></div><div class="side-body">
       <div class="deliverables">
         <div class="artifact-row"><button class="artifact" id="view-presentation" disabled>Client Discussion Deck · View HTML <span>↗</span></button><a class="download" id="download-presentation" href="/artifacts/deck.html" download="deck.html" title="Download Client Discussion Deck HTML" hidden>↓</a></div>
@@ -103,7 +103,7 @@
       <div class="artifact-row"><button class="artifact" id="view-diagram" disabled>Solution diagram <span>↗</span></button><a class="download" id="download-diagram" href="/artifacts/solution-diagram.svg" download="solution-diagram.svg" title="Download solution diagram" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-deck" disabled>Discussion deck <span>↗</span></button><a class="download" id="download-deck" href="/artifacts/deck.md" download="deck.md" title="Download discussion deck" hidden>↓</a></div>
       <pre id="artifact-view">Artifacts will appear here after the session begins.</pre><img id="diagram-view" alt="Sol's solution direction diagram" hidden>
-      <div class="metric" id="metrics">Ready. Four conversation turns, one assessment, four artifact calls.</div>
+      <div class="metric" id="metrics">Ready. Six conversation turns, one assessment, four artifact calls.</div>
     </div></section>
   </div>
 </div>
@@ -191,7 +191,7 @@
     diagramView.hidden = true;
     conversationButton.disabled = true;
     for (const [button, download] of Object.values(artifactControls)) { button.disabled = true; download.hidden = true; }
-    count.textContent = '0 / 4 messages';
+    count.textContent = '0 / 6 messages';
     metrics.textContent = 'Running within the six-minute overall limit.';
     setStatus('Starting session', true);
     setAgentState('bob', 'waiting');
@@ -235,11 +235,11 @@
           }
           messageBodies.get(data.turn).textContent += data.text;
           messages.scrollTop = messages.scrollHeight;
-          count.textContent = 'Turn ' + data.turn + ' / 4 · speaking';
+          count.textContent = 'Turn ' + data.turn + ' / 6 · speaking';
         }
       } else if (data.kind === 'message_end') {
         animateDirection(data.agent);
-        count.textContent = data.turn + ' / 4 messages';
+        count.textContent = data.turn + ' / 6 messages';
         conversationButton.disabled = false;
       } else if (data.kind === 'artifact') {
         const controls = artifactControls[data.name];
