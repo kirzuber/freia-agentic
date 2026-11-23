@@ -109,7 +109,7 @@
       <div class="artifact-row"><button class="artifact" id="view-sol" disabled>Sol research <span>↗</span></button><a class="download" id="download-sol" href="/artifacts/sol.md" download="sol.md" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-conversation" disabled>Conversation transcript <span>↗</span></button><a class="download" id="download-conversation" href="/artifacts/conversation.md" download="conversation.md" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-joint" disabled>Joint assessment <span>↗</span></button><a class="download" id="download-joint" href="/artifacts/joint-assessment.md" download="joint-assessment.md" title="Download joint assessment" hidden>↓</a></div>
-      <div class="artifact-row"><button class="artifact" id="view-editorial" disabled>FreIA editorial brief <span>↗</span></button><a class="download" id="download-editorial" href="/artifacts/editorial-brief.md" download="editorial-brief.md" title="Download editorial brief" hidden>↓</a></div>
+      <div class="artifact-row"><button class="artifact" id="view-editorial" disabled>FreIA challenge &amp; brief <span>↗</span></button><a class="download" id="download-editorial" href="/artifacts/editorial-brief.md" download="editorial-brief.md" title="Download FreIA challenge" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-direction" disabled>Solution direction <span>↗</span></button><a class="download" id="download-direction" href="/artifacts/solution-direction.md" download="solution-direction.md" title="Download solution direction" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-diagram" disabled>Solution diagram <span>↗</span></button><a class="download" id="download-diagram" href="/artifacts/solution-diagram.svg" download="solution-diagram.svg" title="Download solution diagram" hidden>↓</a></div>
       <div class="artifact-row"><button class="artifact" id="view-deck" disabled>Discussion deck <span>↗</span></button><a class="download" id="download-deck" href="/artifacts/deck.md" download="deck.md" title="Download discussion deck" hidden>↓</a></div>
@@ -223,7 +223,7 @@
         const agentState = data.agent === 'freia' && ['thinking', 'speaking'].includes(data.state) ? 'coordinating' : data.state;
         setAgentState(data.agent, agentState, activity && data.state !== 'waiting' ? activity : data.state);
         if (['thinking', 'speaking', 'reading', 'searching', 'coordinating', 'preparing_deck', 'preparing_narrative', 'finalizing_deliverables'].includes(data.state)) {
-          setStatus(data.agent.toUpperCase() + ' · ' + activity, true);
+          setStatus(data.agent.toUpperCase() + ' · ' + (activity || data.state), true);
         }
       } else if (data.kind === 'tool') {
         const card = document.createElement('article'); card.className = 'message ' + data.agent;
@@ -236,7 +236,7 @@
         if (data.phase === 'editorial') {
           if (!editorialBody) {
             const card = document.createElement('article'); card.className = 'message freia';
-            const label = document.createElement('strong'); label.textContent = 'FreIA · editorial brief';
+            const label = document.createElement('strong'); label.textContent = 'FreIA · challenge after turn 4';
             editorialBody = document.createElement('pre'); card.append(label, editorialBody); messages.append(card);
           }
           editorialBody.textContent += data.text;
