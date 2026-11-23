@@ -39,6 +39,7 @@ set -a; . ./.env; set +a
 ```
 
 Open http://127.0.0.1:8000/ to enter a request, optional context and up to three text/Markdown files (32 KB each). **Prepare Mission** makes one DeepSeek call using `instructions/freia.md` and `config/freia.yaml`. Review or edit the mission, then **Approve Mission & Enter Room** passes it to the room for this visit only.
+If an essential detail is missing, FreIA asks one focused question. Answering it makes one finalization call; approval appears only after a completed mission is available. Supporting text, URLs and attached file contents remain with the approved request.
 **Start session** runs fresh independent Bob and Sol research followed by their existing collaboration and artifact workflow. Outputs are isolated per session and downloaded from the current room run. Set `TAVILY_API_KEY` in `.env` to enable their bounded `search_web` tool alongside `read_webpage`.
 During collaboration, Bob and Sol can use the same two research tools to check a material uncertainty or a colleague's question. The conversation shares a limit of two additional searches, two webpage requests and two model follow-ups before the reserved synthesis call.
 
